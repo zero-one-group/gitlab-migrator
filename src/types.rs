@@ -6,6 +6,7 @@ pub struct SourceProject {
     pub name: String,
     pub path: String,
     pub path_with_namespace: String,
+    pub archived: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
