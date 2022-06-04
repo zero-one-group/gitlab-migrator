@@ -28,6 +28,9 @@ pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
         gitlab::thread_safe_create_target_user(member).await?;
     }
 
+    // TODO: manually compile a JSON of Username->Email.
+    // TODO: plug email into the request.
+
     Ok(())
 }
 

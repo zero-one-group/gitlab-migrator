@@ -29,8 +29,9 @@ pub fn create_target_user(user: SourceMember) -> Result<(), Box<dyn Error>> {
     let form = reqwest::blocking::multipart::Form::new()
         .text("name", user.name)
         .text("username", user.username)
-        .text("email", email)
-        .text("password", "Password123!!")
+        .text("email", email) // FIXME
+        .text("force_random_password", "true") // FIXME
+        //.text("reset_password", "true") // TODO
         .text("skip_confirmation", "true")
         .file("avatar", "cache/avatars/arithmox.png")?;
 
