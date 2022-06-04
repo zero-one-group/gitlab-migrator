@@ -32,7 +32,7 @@ pub async fn wait_and_save_project_zip(project_id: u32) -> Result<(), Box<dyn Er
     let mut status = fetch_export_status(project_id).await?;
     while status.export_status != "finished" {
         println!("Waiting for the following to complete:\n{:?}", status);
-        http::throttle_for_ms(2 * 60 * 1000);
+        http::throttle_for_ms(15 * 1000);
         status = fetch_export_status(project_id).await?;
     }
     download_project_zip(&status).await?;
