@@ -31,12 +31,12 @@ where
         let chunk: Vec<_> = futures.by_ref().take(chunk_size).collect();
         let mut chunk_items = try_join_all(chunk).await?;
         acc_items.append(&mut chunk_items);
-        throttle_for(throttle_ms);
+        throttle_for_ms(throttle_ms);
     }
     Ok(acc_items)
 }
 
-pub fn throttle_for(ms: u64) {
+pub fn throttle_for_ms(ms: u64) {
     println!("Throttling for {}ms...", ms);
     std::thread::sleep(std::time::Duration::from_millis(ms));
 }

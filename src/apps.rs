@@ -7,15 +7,42 @@ use std::error::Error;
 // Fetch All Exported Projects
 // ---------------------------------------------------------------------------
 pub async fn fetch_exported_project(project_id: u32) -> Result<(), Box<dyn Error>> {
-    //send_export_request(project_id).await?;
-    //let status = fetch_export_status(project_id).await?;
-    //println!("{:#?}", status);
-
-    // TODO: download
-    // TODO: close the loop by waiting for the export to finish
-    // TODO: top-level function to send all export requests, and wait one by one.
+    wait_and_save_project_zip(project_id).await?;
     // TODO: dry-run with 5 projects, then 50, then all.
 
+    Ok(())
+}
+
+pub async fn wait_and_save_project_zip(project_id: u32) -> Result<(), Box<dyn Error>> {
+    send_export_request(project_id).await?;
+    let mut status = fetch_export_status(project_id).await?;
+    while status.export_status != "finished" {
+        println!("Waiting for the following to complete:\n{:?}", status);
+        http::throttle_for_ms(15 * 1000);
+        status = fetch_export_status(project_id).await?;
+    }
+    download_and_save_project_zip(&status).await?;
+    println!("Exported project saved!\n{:?}", status);
+    Ok(())
+}
+
+pub async fn download_and_save_project_zip(status: &ExportStatus) -> Result<(), Box<dyn Error>> {
+    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
+    let token = env::load_env("SOURCE_GITLAB_TOKEN");
+    let url = format!("{}/projects/{}/export/download", gitlab_url, status.id);
+    let response = http::CLIENT
+        .get(url)
+        .header("PRIVATE-TOKEN", token)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    let dir_path = "cache/projects";
+    std::fs::create_dir_all(dir_path)?;
+    let zip_path = format!("{}/{}.zip", dir_path, status.id);
+    let mut file = std::fs::File::create(zip_path)?;
+    let mut content = std::io::Cursor::new(response.bytes().await?);
+    std::io::copy(&mut content, &mut file)?;
     Ok(())
 }
 

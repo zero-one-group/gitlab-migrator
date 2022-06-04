@@ -53,5 +53,7 @@ impl Membership {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ExportStatus {
+    pub id: u32,
+    pub path_with_namespace: String,
     pub export_status: String,
 }
