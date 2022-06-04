@@ -9,6 +9,12 @@ pub struct SourceProject {
     pub archived: bool,
 }
 
+impl SourceProject {
+    pub fn key(&self) -> String {
+        self.path_with_namespace.to_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SourceGroup {
     pub id: u32,
@@ -16,11 +22,26 @@ pub struct SourceGroup {
     pub full_path: String,
 }
 
+impl SourceGroup {
+    pub fn key(&self) -> String {
+        self.full_path.to_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SourceMember {
     pub id: u32,
     pub name: String,
     pub username: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SourceVariable {
+    pub variable_type: String,
+    pub key: String,
+    pub value: String,
+    pub protected: bool,
+    pub masked: bool,
 }
 
 pub enum Membership {
@@ -45,8 +66,8 @@ impl Membership {
 
     pub fn key(&self) -> String {
         match self {
-            Self::Group(x) => x.full_path.to_string(),
-            Self::Project(x) => x.path_with_namespace.to_string(),
+            Self::Group(x) => x.key(),
+            Self::Project(x) => x.key(),
         }
     }
 }

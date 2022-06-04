@@ -1,29 +1,79 @@
-use crate::types::{ExportStatus, Membership, SourceGroup, SourceMember, SourceProject};
+use crate::types::{
+    ExportStatus, Membership, SourceGroup, SourceMember, SourceProject, SourceVariable,
+};
 use crate::{env, http};
 use std::collections::HashMap;
 use std::error::Error;
+
+// ---------------------------------------------------------------------------
+// Fetch All CI Variables
+// ---------------------------------------------------------------------------
+type AllCiVariables = HashMap<String, Vec<SourceVariable>>;
+
+pub async fn fetch_and_save_all_ci_variables() -> Result<AllCiVariables, Box<dyn Error>> {
+    let groups = fetch_all_source_groups().await?;
+    let projects: Vec<_> = fetch_all_source_projects(groups).await?;
+    let futures: Vec<_> = projects.iter().map(fetch_ci_variables).collect();
+    let pairs = http::politely_try_join_all(futures, 24, 500).await?;
+    let all_ci_variables: HashMap<_, _> = pairs.into_iter().collect();
+    save_ci_variables(&all_ci_variables)?;
+    Ok(all_ci_variables.into_iter().collect())
+}
+
+fn save_ci_variables(ci_variables: &AllCiVariables) -> Result<(), Box<dyn Error>> {
+    let dir_path = "cache";
+    std::fs::create_dir_all(dir_path)?;
+    let json_path = format!("{}/ci_variables.json", dir_path);
+    serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &ci_variables)?;
+    println!("Successfully wrote to {}!", json_path);
+    Ok(())
+}
+
+pub async fn fetch_ci_variables(
+    project: &SourceProject,
+) -> Result<(String, Vec<SourceVariable>), Box<dyn Error>> {
+    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
+    let token = env::load_env("SOURCE_GITLAB_TOKEN");
+    let url = format!("{}/projects/{}/variables", gitlab_url, project.id);
+    let response = http::CLIENT
+        .get(url)
+        .header("PRIVATE-TOKEN", token)
+        .send()
+        .await?;
+    if response.status().is_success() {
+        let payload = &response.text().await?;
+        let variables: Vec<SourceVariable> = serde_json::from_str(payload)?;
+        Ok((project.key(), variables))
+    } else {
+        Ok((project.key(), vec![]))
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Fetch All Exported Projects
 // ---------------------------------------------------------------------------
 pub async fn wait_and_save_all_project_zips() -> Result<(), Box<dyn Error>> {
     let groups = fetch_all_source_groups().await?;
-    let projects = fetch_all_source_projects(groups).await?;
+    let projects: Vec<_> = fetch_all_source_projects(groups)
+        .await?
+        .into_iter()
+        .filter(|project| {
+            let dir_path = "cache/projects";
+            let zip_path = format!("{}/{}.zip", dir_path, project.id);
+            !std::path::Path::new(&zip_path).exists()
+        })
+        .collect();
 
     for (index, project) in projects.iter().enumerate() {
-        let dir_path = "cache/projects";
-        let zip_path = format!("{}/{}.zip", dir_path, project.id);
-        if !std::path::Path::new(&zip_path).exists() {
-            send_export_request(project.id).await?;
-            http::throttle_for_ms(15 * 1000);
-        }
+        send_export_request(project.id).await?;
         println!("Completed ({}/{}) requests!", index + 1, projects.len());
+        http::throttle_for_ms(15 * 1000);
     }
 
     for (index, project) in projects.iter().enumerate() {
         wait_and_save_project_zip(project.id).await?;
-        http::throttle_for_ms(15 * 1000);
         println!("Completed ({}/{}) downloads!", index + 1, projects.len());
+        http::throttle_for_ms(60 * 1000);
     }
     Ok(())
 }
@@ -85,7 +135,7 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
         .await?;
     let payload = &response.text().await?;
     let status: ExportStatus = serde_json::from_str(payload)?;
-    println!("Sent export request to: {:?}", status);
+    println!("Export status:\n{:?}", status);
     Ok(status)
 }
 
@@ -94,7 +144,7 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
 // ---------------------------------------------------------------------------
 type AllMemberships = HashMap<String, HashMap<String, Vec<SourceMember>>>;
 
-pub async fn fetch_all_memberships() -> Result<AllMemberships, Box<dyn Error>> {
+pub async fn fetch_and_save_all_memberships() -> Result<AllMemberships, Box<dyn Error>> {
     let groups = fetch_all_source_groups().await?;
     let futures: Vec<_> = groups
         .iter()
