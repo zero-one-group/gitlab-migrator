@@ -3,6 +3,21 @@ name = "gitlab-migrator"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "gitlab_migrator"
 
 [dependencies]
+dotenv = "0.15.0"
+futures = "0.3.21"
+itertools = "0.10.3"
+lazy_static = "1.4.0"
+reqwest = { version = "0.11.10", features = ["blocking", "json", "multipart"] }
+reqwest-middleware = "0.1.6"
+reqwest-retry = "0.1.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
