@@ -1,4 +1,7 @@
-use crate::types::{CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceMember};
+use crate::types::{
+    CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceMember, SourceProject,
+    SourceVariable,
+};
 use crate::{gitlab, http};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -42,10 +45,7 @@ pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
 pub async fn download_source_ci_variables() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_source_groups().await?;
     let projects: Vec<_> = gitlab::fetch_all_source_projects(groups).await?;
-    let futures: Vec<_> = projects
-        .iter()
-        .map(gitlab::fetch_source_ci_variables)
-        .collect();
+    let futures: Vec<_> = projects.iter().map(fetch_source_ci_variables).collect();
     let pairs = http::politely_try_join_all(futures, 24, 500).await?;
     let all_ci_variables: HashMap<_, _> = pairs.into_iter().collect();
     save_ci_variables(&all_ci_variables)?;
@@ -59,6 +59,14 @@ fn save_ci_variables(ci_variables: &CachedCiVariables) -> Result<(), Box<dyn Err
     serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &ci_variables)?;
     println!("Successfully wrote to {}!", json_path);
     Ok(())
+}
+
+pub async fn fetch_source_ci_variables(
+    project: &SourceProject,
+) -> Result<(String, Vec<SourceVariable>), Box<dyn Error>> {
+    let key = project.key();
+    let variables = gitlab::fetch_source_ci_variables(project).await?;
+    Ok((key, variables))
 }
 
 // ---------------------------------------------------------------------------

@@ -8,11 +8,13 @@ use std::error::Error;
 lazy_static::lazy_static! {
     pub static ref SOURCE_GITLAB_URL: String = env::load_env("SOURCE_GITLAB_URL");
     pub static ref SOURCE_GITLAB_TOKEN: String = env::load_env("SOURCE_GITLAB_TOKEN");
+    pub static ref TARGET_GITLAB_URL: String = env::load_env("TARGET_GITLAB_URL");
+    pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
 pub async fn fetch_source_ci_variables(
     project: &SourceProject,
-) -> Result<(String, Vec<SourceVariable>), Box<dyn Error>> {
+) -> Result<Vec<SourceVariable>, Box<dyn Error>> {
     let url = format!("{}/projects/{}/variables", *SOURCE_GITLAB_URL, project.id);
     let response = http::CLIENT
         .get(url)
@@ -22,9 +24,9 @@ pub async fn fetch_source_ci_variables(
     if response.status().is_success() {
         let payload = &response.text().await?;
         let variables: Vec<SourceVariable> = serde_json::from_str(payload)?;
-        Ok((project.key(), variables))
+        Ok(variables)
     } else {
-        Ok((project.key(), vec![]))
+        Ok(vec![])
     }
 }
 
