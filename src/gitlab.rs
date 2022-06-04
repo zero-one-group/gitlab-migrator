@@ -12,6 +12,36 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
+pub async fn thread_safe_create_target_user(user: SourceMember) -> Result<String, String> {
+    let user_str = format!("{:?}", user);
+    let spawn_result = tokio::task::spawn_blocking(move || match create_target_user(user) {
+        Ok(_) => Ok(format!("Successfully created {:?}.", user_str)),
+        Err(_) => Err(format!("Failed to create {:?}.", user_str)),
+    })
+    .await;
+    spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
+}
+
+pub fn create_target_user(user: SourceMember) -> Result<(), Box<dyn Error>> {
+    let url = format!("{}/users", *TARGET_GITLAB_URL);
+    let email = format!("{}@example.com", user.username); // FIXME
+    let client = reqwest::blocking::Client::new();
+    let form = reqwest::blocking::multipart::Form::new()
+        .text("name", user.name)
+        .text("username", user.username)
+        .text("email", email)
+        .text("password", "Password123!!")
+        .text("skip_confirmation", "true")
+        .file("avatar", "cache/avatars/arithmox.png")?;
+
+    client
+        .post(url)
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .multipart(form)
+        .send()?;
+    Ok(())
+}
+
 pub async fn fetch_source_ci_variables(
     project: &SourceProject,
 ) -> Result<Vec<SourceVariable>, Box<dyn Error>> {

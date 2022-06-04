@@ -19,23 +19,15 @@ pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
         .flat_map(|x| x.values())
         .flatten()
         .unique_by(|x| x.id)
+        .filter(|x| x.username == "arithmox") // FIXME
         .collect();
-
     println!("{:#?}", all_members);
-    println!("{:#?}", all_members.len());
 
-    //let gitlab_url = env::load_env("TARGET_GITLAB_URL");
-    //let token = env::load_env("TARGET_GITLAB_TOKEN");
-    //let url = format!("{}/groups/", gitlab_url);
-    //let response = http::CLIENT
-    //.get(url)
-    //.query(&[("per_page", "100")])
-    //.header("PRIVATE-TOKEN", token)
-    //.send()
-    //.await?;
-    //let payload = &response.text().await?;
-    //let groups: Vec<SourceGroup> = serde_json::from_str(payload)?;
-    //println!("{:#?}", groups);
+    for member in all_members {
+        let member = member.clone();
+        gitlab::thread_safe_create_target_user(member).await?;
+    }
+
     Ok(())
 }
 
