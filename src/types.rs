@@ -50,3 +50,8 @@ impl Membership {
         }
     }
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ExportStatus {
+    pub export_status: String,
+}

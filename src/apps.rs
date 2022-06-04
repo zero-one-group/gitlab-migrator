@@ -1,8 +1,54 @@
-use crate::types::{Membership, SourceGroup, SourceMember, SourceProject};
+use crate::types::{ExportStatus, Membership, SourceGroup, SourceMember, SourceProject};
 use crate::{env, http};
 use std::collections::HashMap;
 use std::error::Error;
 
+// ---------------------------------------------------------------------------
+// Fetch All Exported Projects
+// ---------------------------------------------------------------------------
+pub async fn fetch_exported_project(project_id: u32) -> Result<(), Box<dyn Error>> {
+    //send_export_request(project_id).await?;
+    //let status = fetch_export_status(project_id).await?;
+    //println!("{:#?}", status);
+
+    // TODO: download
+    // TODO: close the loop by waiting for the export to finish
+    // TODO: top-level function to send all export requests, and wait one by one.
+    // TODO: dry-run with 5 projects, then 50, then all.
+
+    Ok(())
+}
+
+pub async fn send_export_request(project_id: u32) -> Result<(), Box<dyn Error>> {
+    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
+    let token = env::load_env("SOURCE_GITLAB_TOKEN");
+    let url = format!("{}/projects/{}/export", gitlab_url, project_id);
+    http::CLIENT
+        .post(url)
+        .header("PRIVATE-TOKEN", token)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dyn Error>> {
+    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
+    let token = env::load_env("SOURCE_GITLAB_TOKEN");
+    let url = format!("{}/projects/{}/export", gitlab_url, project_id);
+    let response = http::CLIENT
+        .get(url)
+        .header("PRIVATE-TOKEN", token)
+        .send()
+        .await?;
+    let payload = &response.text().await?;
+    let status: ExportStatus = serde_json::from_str(payload)?;
+    Ok(status)
+}
+
+// ---------------------------------------------------------------------------
+// Fetch All Memberships
+// ---------------------------------------------------------------------------
 type AllMemberships = HashMap<String, HashMap<String, Vec<SourceMember>>>;
 
 pub async fn fetch_all_memberships() -> Result<AllMemberships, Box<dyn Error>> {
