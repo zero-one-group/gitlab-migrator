@@ -6,27 +6,41 @@ use std::error::Error;
 // ---------------------------------------------------------------------------
 // Fetch All Exported Projects
 // ---------------------------------------------------------------------------
-pub async fn fetch_exported_project(project_id: u32) -> Result<(), Box<dyn Error>> {
-    wait_and_save_project_zip(project_id).await?;
-    // TODO: dry-run with 5 projects, then 50, then all.
+pub async fn wait_and_save_all_project_zips() -> Result<(), Box<dyn Error>> {
+    let groups = fetch_all_source_groups().await?;
+    let projects = fetch_all_source_projects(groups).await?;
 
+    for (index, project) in projects.iter().enumerate() {
+        let dir_path = "cache/projects";
+        let zip_path = format!("{}/{}.zip", dir_path, project.id);
+        if !std::path::Path::new(&zip_path).exists() {
+            send_export_request(project.id).await?;
+            http::throttle_for_ms(15 * 1000);
+        }
+        println!("Completed ({}/{}) requests!", index + 1, projects.len());
+    }
+
+    for (index, project) in projects.iter().enumerate() {
+        wait_and_save_project_zip(project.id).await?;
+        http::throttle_for_ms(15 * 1000);
+        println!("Completed ({}/{}) downloads!", index + 1, projects.len());
+    }
     Ok(())
 }
 
 pub async fn wait_and_save_project_zip(project_id: u32) -> Result<(), Box<dyn Error>> {
-    send_export_request(project_id).await?;
     let mut status = fetch_export_status(project_id).await?;
     while status.export_status != "finished" {
         println!("Waiting for the following to complete:\n{:?}", status);
-        http::throttle_for_ms(15 * 1000);
+        http::throttle_for_ms(2 * 60 * 1000);
         status = fetch_export_status(project_id).await?;
     }
-    download_and_save_project_zip(&status).await?;
+    download_project_zip(&status).await?;
     println!("Exported project saved!\n{:?}", status);
     Ok(())
 }
 
-pub async fn download_and_save_project_zip(status: &ExportStatus) -> Result<(), Box<dyn Error>> {
+pub async fn download_project_zip(status: &ExportStatus) -> Result<(), Box<dyn Error>> {
     let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
     let token = env::load_env("SOURCE_GITLAB_TOKEN");
     let url = format!("{}/projects/{}/export/download", gitlab_url, status.id);
@@ -56,6 +70,7 @@ pub async fn send_export_request(project_id: u32) -> Result<(), Box<dyn Error>> 
         .send()
         .await?
         .error_for_status()?;
+    println!("Requested export for project ID {}!", project_id);
     Ok(())
 }
 
@@ -70,6 +85,7 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
         .await?;
     let payload = &response.text().await?;
     let status: ExportStatus = serde_json::from_str(payload)?;
+    println!("Sent export request to: {:?}", status);
     Ok(status)
 }
 
