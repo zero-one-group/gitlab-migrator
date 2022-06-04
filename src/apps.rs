@@ -7,7 +7,7 @@ use std::error::Error;
 // ---------------------------------------------------------------------------
 // Create Users
 // ---------------------------------------------------------------------------
-pub async fn create_all_target_users() -> Result<(), Box<dyn Error>> {
+pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
     let memberships = std::fs::read_to_string("cache/memberships.json")?;
     let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
 
@@ -20,9 +20,6 @@ pub async fn create_all_target_users() -> Result<(), Box<dyn Error>> {
 
     println!("{:#?}", all_members);
     println!("{:#?}", all_members.len());
-
-    // TODO: organise CLI into apps
-    // TODO: add email, avatar to SourceMember
 
     //let gitlab_url = env::load_env("TARGET_GITLAB_URL");
     //let token = env::load_env("TARGET_GITLAB_TOKEN");
@@ -40,9 +37,9 @@ pub async fn create_all_target_users() -> Result<(), Box<dyn Error>> {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch All CI Variables
+// Download Source CI Variables
 // ---------------------------------------------------------------------------
-pub async fn fetch_and_save_all_ci_variables() -> Result<CachedCiVariables, Box<dyn Error>> {
+pub async fn download_source_ci_variables() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_source_groups().await?;
     let projects: Vec<_> = gitlab::fetch_all_source_projects(groups).await?;
     let futures: Vec<_> = projects
@@ -52,7 +49,7 @@ pub async fn fetch_and_save_all_ci_variables() -> Result<CachedCiVariables, Box<
     let pairs = http::politely_try_join_all(futures, 24, 500).await?;
     let all_ci_variables: HashMap<_, _> = pairs.into_iter().collect();
     save_ci_variables(&all_ci_variables)?;
-    Ok(all_ci_variables.into_iter().collect())
+    Ok(())
 }
 
 fn save_ci_variables(ci_variables: &CachedCiVariables) -> Result<(), Box<dyn Error>> {
@@ -65,9 +62,9 @@ fn save_ci_variables(ci_variables: &CachedCiVariables) -> Result<(), Box<dyn Err
 }
 
 // ---------------------------------------------------------------------------
-// Fetch All Exported Projects
+// Download Source Projects
 // ---------------------------------------------------------------------------
-pub async fn wait_and_save_all_project_zips() -> Result<(), Box<dyn Error>> {
+pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_source_groups().await?;
     let projects: Vec<_> = gitlab::fetch_all_source_projects(groups)
         .await?
@@ -119,7 +116,7 @@ pub async fn download_project_zip(status: &ExportStatus) -> Result<(), Box<dyn E
 // ---------------------------------------------------------------------------
 // Fetch All Memberships
 // ---------------------------------------------------------------------------
-pub async fn fetch_and_save_all_memberships() -> Result<CachedMemberships, Box<dyn Error>> {
+pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_source_groups().await?;
     let futures: Vec<_> = groups
         .iter()
@@ -145,7 +142,7 @@ pub async fn fetch_and_save_all_memberships() -> Result<CachedMemberships, Box<d
         ("projects".to_string(), project_members),
     ]);
     save_memberships(&all_memberships)?;
-    Ok(all_memberships)
+    Ok(())
 }
 
 fn save_memberships(memberships: &CachedMemberships) -> Result<(), Box<dyn Error>> {
