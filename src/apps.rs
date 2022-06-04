@@ -2,8 +2,44 @@ use crate::types::{
     ExportStatus, Membership, SourceGroup, SourceMember, SourceProject, SourceVariable,
 };
 use crate::{env, http};
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::error::Error;
+
+// ---------------------------------------------------------------------------
+// Create Users
+// ---------------------------------------------------------------------------
+pub async fn create_all_target_users() -> Result<(), Box<dyn Error>> {
+    let memberships = std::fs::read_to_string("cache/memberships.json")?;
+    let memberships: AllMemberships = serde_json::from_str(&memberships)?;
+
+    let all_members: Vec<_> = memberships
+        .values()
+        .flat_map(|x| x.values())
+        .flatten()
+        .unique_by(|x| x.id)
+        .collect();
+
+    println!("{:#?}", all_members);
+    println!("{:#?}", all_members.len());
+
+    // TODO: organise CLI into apps
+    // TODO: add email, avatar to SourceMember
+
+    //let gitlab_url = env::load_env("TARGET_GITLAB_URL");
+    //let token = env::load_env("TARGET_GITLAB_TOKEN");
+    //let url = format!("{}/groups/", gitlab_url);
+    //let response = http::CLIENT
+    //.get(url)
+    //.query(&[("per_page", "100")])
+    //.header("PRIVATE-TOKEN", token)
+    //.send()
+    //.await?;
+    //let payload = &response.text().await?;
+    //let groups: Vec<SourceGroup> = serde_json::from_str(payload)?;
+    //println!("{:#?}", groups);
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Fetch All CI Variables
@@ -81,12 +117,12 @@ pub async fn wait_and_save_all_project_zips() -> Result<(), Box<dyn Error>> {
 pub async fn wait_and_save_project_zip(project_id: u32) -> Result<(), Box<dyn Error>> {
     let mut status = fetch_export_status(project_id).await?;
     while status.export_status != "finished" {
-        println!("Waiting for the following to complete:\n{:?}", status);
+        println!("Waiting for the following to complete: {:?}", status);
         http::throttle_for_ms(15 * 1000);
         status = fetch_export_status(project_id).await?;
     }
     download_project_zip(&status).await?;
-    println!("Exported project saved!\n{:?}", status);
+    println!("Exported project saved! {:?}", status);
     Ok(())
 }
 
@@ -135,7 +171,6 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
         .await?;
     let payload = &response.text().await?;
     let status: ExportStatus = serde_json::from_str(payload)?;
-    println!("Export status:\n{:?}", status);
     Ok(status)
 }
 
