@@ -5,15 +5,18 @@ use crate::{env, http};
 use reqwest::Response;
 use std::error::Error;
 
+lazy_static::lazy_static! {
+    pub static ref SOURCE_GITLAB_URL: String = env::load_env("SOURCE_GITLAB_URL");
+    pub static ref SOURCE_GITLAB_TOKEN: String = env::load_env("SOURCE_GITLAB_TOKEN");
+}
+
 pub async fn fetch_source_ci_variables(
     project: &SourceProject,
 ) -> Result<(String, Vec<SourceVariable>), Box<dyn Error>> {
-    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
-    let token = env::load_env("SOURCE_GITLAB_TOKEN");
-    let url = format!("{}/projects/{}/variables", gitlab_url, project.id);
+    let url = format!("{}/projects/{}/variables", *SOURCE_GITLAB_URL, project.id);
     let response = http::CLIENT
         .get(url)
-        .header("PRIVATE-TOKEN", token)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?;
     if response.status().is_success() {
@@ -28,12 +31,13 @@ pub async fn fetch_source_ci_variables(
 pub async fn download_source_project_zip(
     status: &ExportStatus,
 ) -> Result<Response, Box<dyn Error>> {
-    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
-    let token = env::load_env("SOURCE_GITLAB_TOKEN");
-    let url = format!("{}/projects/{}/export/download", gitlab_url, status.id);
+    let url = format!(
+        "{}/projects/{}/export/download",
+        *SOURCE_GITLAB_URL, status.id
+    );
     let response = http::CLIENT
         .get(url)
-        .header("PRIVATE-TOKEN", token)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?
         .error_for_status()?;
@@ -41,12 +45,10 @@ pub async fn download_source_project_zip(
 }
 
 pub async fn send_export_request(project_id: u32) -> Result<(), Box<dyn Error>> {
-    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
-    let token = env::load_env("SOURCE_GITLAB_TOKEN");
-    let url = format!("{}/projects/{}/export", gitlab_url, project_id);
+    let url = format!("{}/projects/{}/export", *SOURCE_GITLAB_URL, project_id);
     http::CLIENT
         .post(url)
-        .header("PRIVATE-TOKEN", token)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?
         .error_for_status()?;
@@ -55,12 +57,10 @@ pub async fn send_export_request(project_id: u32) -> Result<(), Box<dyn Error>> 
 }
 
 pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dyn Error>> {
-    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
-    let token = env::load_env("SOURCE_GITLAB_TOKEN");
-    let url = format!("{}/projects/{}/export", gitlab_url, project_id);
+    let url = format!("{}/projects/{}/export", *SOURCE_GITLAB_URL, project_id);
     let response = http::CLIENT
         .get(url)
-        .header("PRIVATE-TOKEN", token)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?;
     let payload = &response.text().await?;
@@ -71,18 +71,16 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
 pub async fn fetch_source_members(
     membership: Membership,
 ) -> Result<Vec<SourceMember>, Box<dyn Error>> {
-    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
-    let token = env::load_env("SOURCE_GITLAB_TOKEN");
     let url = format!(
         "{}/{}/{}/members",
-        gitlab_url,
+        *SOURCE_GITLAB_URL,
         membership.url_prefix(),
         membership.id()
     );
     let response = http::CLIENT
         .get(url)
         .query(&[("per_page", "100")])
-        .header("PRIVATE-TOKEN", token)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?;
     let payload = &response.text().await?;
@@ -124,13 +122,11 @@ pub async fn fetch_source_groups_projects(
     group_id: u32,
     page: u32,
 ) -> Result<Vec<SourceProject>, Box<dyn Error>> {
-    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
-    let token = env::load_env("SOURCE_GITLAB_TOKEN");
-    let url = format!("{}/groups/{}/projects", gitlab_url, group_id);
+    let url = format!("{}/groups/{}/projects", *SOURCE_GITLAB_URL, group_id);
     let response = http::CLIENT
         .get(url)
         .query(&[("per_page", "100"), ("page", &page.to_string())])
-        .header("PRIVATE-TOKEN", token)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?;
     let payload = &response.text().await?;
@@ -151,13 +147,11 @@ pub async fn fetch_all_source_groups() -> Result<Vec<SourceGroup>, Box<dyn Error
 }
 
 async fn fetch_source_groups(page: u32) -> Result<Vec<SourceGroup>, Box<dyn Error>> {
-    let gitlab_url = env::load_env("SOURCE_GITLAB_URL");
-    let token = env::load_env("SOURCE_GITLAB_TOKEN");
-    let url = format!("{}/groups/", gitlab_url);
+    let url = format!("{}/groups/", *SOURCE_GITLAB_URL);
     let response = http::CLIENT
         .get(url)
         .query(&[("per_page", "100"), ("page", &page.to_string())])
-        .header("PRIVATE-TOKEN", token)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?;
     let payload = &response.text().await?;
