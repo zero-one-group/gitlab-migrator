@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SourceProject {
@@ -33,6 +34,7 @@ pub struct SourceMember {
     pub id: u32,
     pub name: String,
     pub username: String,
+    pub avatar_url: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -78,3 +80,6 @@ pub struct ExportStatus {
     pub path_with_namespace: String,
     pub export_status: String,
 }
+
+pub type CachedCiVariables = HashMap<String, Vec<SourceVariable>>;
+pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceMember>>>;
