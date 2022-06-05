@@ -83,3 +83,11 @@ pub struct ExportStatus {
 
 pub type CachedCiVariables = HashMap<String, Vec<SourceVariable>>;
 pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceMember>>>;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TargetMember {
+    pub id: u32,
+    pub name: String,
+    pub username: String,
+    pub email: String,
+}

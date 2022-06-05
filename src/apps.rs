@@ -8,29 +8,44 @@ use std::collections::HashMap;
 use std::error::Error;
 
 // ---------------------------------------------------------------------------
+// Delete Target Users
+// ---------------------------------------------------------------------------
+pub async fn delete_target_users() -> Result<(), Box<dyn Error>> {
+    let memberships = std::fs::read_to_string("cache/memberships.json")?;
+    let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
+    let usernames: Vec<_> = memberships
+        .values()
+        .flat_map(|user| user.values())
+        .flatten()
+        .unique_by(|user| user.id)
+        .map(|user| user.username.to_string())
+        .collect();
+
+    let all_target_users = gitlab::fetch_all_target_users().await?;
+    let futures: Vec<_> = all_target_users
+        .into_iter()
+        .filter(|user| usernames.contains(&user.username))
+        .map(gitlab::delete_target_user)
+        .collect();
+    http::politely_try_join_all(futures, 8, 500).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Create Target Users
 // ---------------------------------------------------------------------------
 pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
     let memberships = std::fs::read_to_string("cache/memberships.json")?;
     let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
 
-    let all_members: Vec<_> = memberships
+    let futures: Vec<_> = memberships
         .values()
-        .flat_map(|x| x.values())
+        .flat_map(|user| user.values())
         .flatten()
-        .unique_by(|x| x.id)
-        .filter(|x| x.username == "anthony-khong") // FIXME: delete
+        .unique_by(|user| user.id)
+        .map(|user| gitlab::create_target_user(user.clone()))
         .collect();
-    println!("{:#?}", all_members);
-
-    for member in all_members {
-        let member = member.clone();
-        gitlab::create_target_user(member).await?;
-    }
-
-    // TODO: manually compile a JSON of Username->Email.
-    // TODO: plug email into the request.
-
+    http::politely_try_join_all(futures, 8, 500).await?;
     Ok(())
 }
 
