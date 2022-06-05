@@ -12,28 +12,31 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
-pub async fn thread_safe_create_target_user(user: SourceMember) -> Result<String, String> {
+pub async fn create_target_user(user: SourceMember) -> Result<String, String> {
     let user_str = format!("{:?}", user);
-    let spawn_result = tokio::task::spawn_blocking(move || match create_target_user(user) {
-        Ok(_) => Ok(format!("Successfully created {:?}.", user_str)),
-        Err(_) => Err(format!("Failed to create {:?}.", user_str)),
-    })
-    .await;
+    let spawn_result =
+        tokio::task::spawn_blocking(move || match synchronous_create_target_user(user) {
+            Ok(_) => Ok(format!("Successfully created {:?}.", user_str)),
+            Err(_) => Err(format!("Failed to create {:?}.", user_str)),
+        })
+        .await;
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
 }
 
-pub fn create_target_user(user: SourceMember) -> Result<(), Box<dyn Error>> {
-    let url = format!("{}/users", *TARGET_GITLAB_URL);
-    let email = format!("{}@example.com", user.username); // FIXME
+pub fn synchronous_create_target_user(user: SourceMember) -> Result<(), Box<dyn Error>> {
+    println!("Creating user {}...", user.username);
+    let avatar = synchronous_download_avatar(&user)?;
     let client = reqwest::blocking::Client::new();
+    let url = format!("{}/users", *TARGET_GITLAB_URL);
+    let email = format!("{}@example.com", user.username); // FIXME: use real emails
     let form = reqwest::blocking::multipart::Form::new()
         .text("name", user.name)
         .text("username", user.username)
-        .text("email", email) // FIXME
-        .text("force_random_password", "true") // FIXME
-        //.text("reset_password", "true") // TODO
+        .text("email", email)
+        .text("force_random_password", "true")
+        //.text("reset_password", "true") // TODO: uncomment
         .text("skip_confirmation", "true")
-        .file("avatar", "cache/avatars/arithmox.png")?;
+        .file("avatar", avatar)?;
 
     client
         .post(url)
@@ -41,6 +44,19 @@ pub fn create_target_user(user: SourceMember) -> Result<(), Box<dyn Error>> {
         .multipart(form)
         .send()?;
     Ok(())
+}
+
+pub fn synchronous_download_avatar(user: &SourceMember) -> Result<String, Box<dyn Error>> {
+    println!("Downloading avatar for {}...", user.username);
+    let client = reqwest::blocking::Client::new();
+    let response = client.get(&user.avatar_url).send()?;
+    let dir_path = "cache/avatars";
+    std::fs::create_dir_all(dir_path)?;
+    let png_path = format!("{}/{}.png", dir_path, user.username);
+    let mut file = std::fs::File::create(&png_path)?;
+    let mut content = std::io::Cursor::new(response.bytes()?);
+    std::io::copy(&mut content, &mut file)?;
+    Ok(png_path)
 }
 
 pub async fn fetch_source_ci_variables(

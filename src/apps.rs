@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::error::Error;
 
 // ---------------------------------------------------------------------------
-// Create Users
+// Create Target Users
 // ---------------------------------------------------------------------------
 pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
     let memberships = std::fs::read_to_string("cache/memberships.json")?;
@@ -19,13 +19,13 @@ pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
         .flat_map(|x| x.values())
         .flatten()
         .unique_by(|x| x.id)
-        .filter(|x| x.username == "arithmox") // FIXME
+        .filter(|x| x.username == "anthony-khong") // FIXME: delete
         .collect();
     println!("{:#?}", all_members);
 
     for member in all_members {
         let member = member.clone();
-        gitlab::thread_safe_create_target_user(member).await?;
+        gitlab::create_target_user(member).await?;
     }
 
     // TODO: manually compile a JSON of Username->Email.
@@ -117,7 +117,7 @@ pub async fn download_project_zip(status: &ExportStatus) -> Result<(), Box<dyn E
 }
 
 // ---------------------------------------------------------------------------
-// Fetch All Memberships
+// Download Source Memberships
 // ---------------------------------------------------------------------------
 pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_source_groups().await?;
