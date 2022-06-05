@@ -1,5 +1,5 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceMember, SourceProject, SourceVariable,
+    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -12,35 +12,93 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
-pub async fn thread_safe_create_target_user(user: SourceMember) -> Result<String, String> {
+pub async fn fetch_all_target_users() -> Result<Vec<TargetUser>, Box<dyn Error>> {
+    let mut all_users = vec![];
+    let mut latest_page = 1;
+    let mut latest_len = 0;
+    while latest_len == 100 || latest_page == 1 {
+        let mut users = fetch_target_users(latest_page).await?;
+        latest_len = users.len();
+        latest_page += 1;
+        all_users.append(&mut users);
+    }
+    Ok(all_users)
+}
+
+pub async fn fetch_target_users(page: u32) -> Result<Vec<TargetUser>, Box<dyn Error>> {
+    let url = format!("{}/users", *TARGET_GITLAB_URL);
+    let response = http::CLIENT
+        .get(url)
+        .query(&[("per_page", "100"), ("page", &page.to_string())])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload = &response.text().await?;
+    let users: Vec<TargetUser> = serde_json::from_str(payload)?;
+    Ok(users)
+}
+
+pub async fn delete_target_user(user: TargetUser) -> Result<(), Box<dyn Error>> {
+    println!("Deleting user {:?}...", user);
+    let url = format!("{}/users/{}", *TARGET_GITLAB_URL, user.id);
+    http::CLIENT
+        .delete(url)
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+pub async fn create_target_user(user: SourceUser) -> Result<TargetUser, String> {
     let user_str = format!("{:?}", user);
-    let spawn_result = tokio::task::spawn_blocking(move || match create_target_user(user) {
-        Ok(_) => Ok(format!("Successfully created {:?}.", user_str)),
-        Err(_) => Err(format!("Failed to create {:?}.", user_str)),
-    })
-    .await;
+    let spawn_result =
+        tokio::task::spawn_blocking(move || match synchronous_create_target_user(user) {
+            Ok(x) => Ok(x),
+            Err(_) => Err(format!("Failed to create {:?}.", user_str)),
+        })
+        .await;
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
 }
 
-pub fn create_target_user(user: SourceMember) -> Result<(), Box<dyn Error>> {
-    let url = format!("{}/users", *TARGET_GITLAB_URL);
-    let email = format!("{}@example.com", user.username); // FIXME
+pub fn synchronous_create_target_user(user: SourceUser) -> Result<TargetUser, Box<dyn Error>> {
+    println!("Creating user {:?}...", user);
+    let avatar = synchronous_download_avatar(&user)?;
     let client = reqwest::blocking::Client::new();
+    let url = format!("{}/users", *TARGET_GITLAB_URL);
+    let email = format!("{}@example.com", user.username); // FIXME: use real emails
     let form = reqwest::blocking::multipart::Form::new()
         .text("name", user.name)
         .text("username", user.username)
-        .text("email", email) // FIXME
-        .text("force_random_password", "true") // FIXME
-        //.text("reset_password", "true") // TODO
+        .text("email", email)
+        .text("force_random_password", "true")
+        //.text("reset_password", "true") // TODO: uncomment
         .text("skip_confirmation", "true")
-        .file("avatar", "cache/avatars/arithmox.png")?;
+        .file("avatar", avatar)?;
 
-    client
+    let response = client
         .post(url)
         .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
         .multipart(form)
         .send()?;
-    Ok(())
+
+    let payload = response.text()?;
+    let member: TargetUser = serde_json::from_str(&payload)?;
+    Ok(member)
+}
+
+pub fn synchronous_download_avatar(user: &SourceUser) -> Result<String, Box<dyn Error>> {
+    println!("Downloading avatar for {}...", user.username);
+    let client = reqwest::blocking::Client::new();
+    let response = client.get(&user.avatar_url).send()?;
+    let dir_path = "cache/avatars";
+    std::fs::create_dir_all(dir_path)?;
+    let png_path = format!("{}/{}.png", dir_path, user.username);
+    let mut file = std::fs::File::create(&png_path)?;
+    let mut content = std::io::Cursor::new(response.bytes()?);
+    std::io::copy(&mut content, &mut file)?;
+    Ok(png_path)
 }
 
 pub async fn fetch_source_ci_variables(
@@ -103,7 +161,7 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
 
 pub async fn fetch_source_members(
     membership: Membership,
-) -> Result<Vec<SourceMember>, Box<dyn Error>> {
+) -> Result<Vec<SourceUser>, Box<dyn Error>> {
     let url = format!(
         "{}/{}/{}/members",
         *SOURCE_GITLAB_URL,
@@ -117,7 +175,7 @@ pub async fn fetch_source_members(
         .send()
         .await?;
     let payload = &response.text().await?;
-    let members: Vec<SourceMember> = serde_json::from_str(payload)?;
+    let members: Vec<SourceUser> = serde_json::from_str(payload)?;
     Ok(members)
 }
 

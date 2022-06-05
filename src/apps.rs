@@ -1,5 +1,5 @@
 use crate::types::{
-    CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceMember, SourceProject,
+    CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceProject, SourceUser,
     SourceVariable,
 };
 use crate::{gitlab, http};
@@ -8,29 +8,44 @@ use std::collections::HashMap;
 use std::error::Error;
 
 // ---------------------------------------------------------------------------
-// Create Users
+// Delete Target Users
+// ---------------------------------------------------------------------------
+pub async fn delete_target_users() -> Result<(), Box<dyn Error>> {
+    let memberships = std::fs::read_to_string("cache/memberships.json")?;
+    let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
+    let usernames: Vec<_> = memberships
+        .values()
+        .flat_map(|user| user.values())
+        .flatten()
+        .unique_by(|user| user.id)
+        .map(|user| user.username.to_string())
+        .collect();
+
+    let all_target_users = gitlab::fetch_all_target_users().await?;
+    let futures: Vec<_> = all_target_users
+        .into_iter()
+        .filter(|user| usernames.contains(&user.username))
+        .map(gitlab::delete_target_user)
+        .collect();
+    http::politely_try_join_all(futures, 8, 500).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Create Target Users
 // ---------------------------------------------------------------------------
 pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
     let memberships = std::fs::read_to_string("cache/memberships.json")?;
     let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
 
-    let all_members: Vec<_> = memberships
+    let futures: Vec<_> = memberships
         .values()
-        .flat_map(|x| x.values())
+        .flat_map(|user| user.values())
         .flatten()
-        .unique_by(|x| x.id)
-        .filter(|x| x.username == "arithmox") // FIXME
+        .unique_by(|user| user.id)
+        .map(|user| gitlab::create_target_user(user.clone()))
         .collect();
-    println!("{:#?}", all_members);
-
-    for member in all_members {
-        let member = member.clone();
-        gitlab::thread_safe_create_target_user(member).await?;
-    }
-
-    // TODO: manually compile a JSON of Username->Email.
-    // TODO: plug email into the request.
-
+    http::politely_try_join_all(futures, 8, 500).await?;
     Ok(())
 }
 
@@ -117,13 +132,13 @@ pub async fn download_project_zip(status: &ExportStatus) -> Result<(), Box<dyn E
 }
 
 // ---------------------------------------------------------------------------
-// Fetch All Memberships
+// Download Source Memberships
 // ---------------------------------------------------------------------------
 pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_source_groups().await?;
     let futures: Vec<_> = groups
         .iter()
-        .map(|group| fetch_members(Membership::Group(group.clone())))
+        .map(|group| fetch_source_members(Membership::Group(group.clone())))
         .collect();
     let group_members: HashMap<_, _> = http::politely_try_join_all(futures, 24, 500)
         .await?
@@ -133,7 +148,7 @@ pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
     let projects = gitlab::fetch_all_source_projects(groups).await?;
     let futures: Vec<_> = projects
         .into_iter()
-        .map(|project| fetch_members(Membership::Project(project)))
+        .map(|project| fetch_source_members(Membership::Project(project)))
         .collect();
     let project_members: HashMap<_, _> = http::politely_try_join_all(futures, 24, 500)
         .await?
@@ -144,11 +159,11 @@ pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
         ("groups".to_string(), group_members),
         ("projects".to_string(), project_members),
     ]);
-    save_memberships(&all_memberships)?;
+    save_source_memberships(&all_memberships)?;
     Ok(())
 }
 
-fn save_memberships(memberships: &CachedMemberships) -> Result<(), Box<dyn Error>> {
+fn save_source_memberships(memberships: &CachedMemberships) -> Result<(), Box<dyn Error>> {
     let dir_path = "cache";
     std::fs::create_dir_all(dir_path)?;
     let json_path = format!("{}/memberships.json", dir_path);
@@ -157,9 +172,9 @@ fn save_memberships(memberships: &CachedMemberships) -> Result<(), Box<dyn Error
     Ok(())
 }
 
-pub async fn fetch_members(
+pub async fn fetch_source_members(
     membership: Membership,
-) -> Result<(String, Vec<SourceMember>), Box<dyn Error>> {
+) -> Result<(String, Vec<SourceUser>), Box<dyn Error>> {
     let key = membership.key();
     let members = gitlab::fetch_source_members(membership).await?;
     Ok((key, members))
