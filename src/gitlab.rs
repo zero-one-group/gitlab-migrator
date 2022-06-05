@@ -1,6 +1,5 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceMember, SourceProject, SourceVariable,
-    TargetMember,
+    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -13,7 +12,7 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
-pub async fn fetch_all_target_users() -> Result<Vec<TargetMember>, Box<dyn Error>> {
+pub async fn fetch_all_target_users() -> Result<Vec<TargetUser>, Box<dyn Error>> {
     let mut all_users = vec![];
     let mut latest_page = 1;
     let mut latest_len = 0;
@@ -26,7 +25,7 @@ pub async fn fetch_all_target_users() -> Result<Vec<TargetMember>, Box<dyn Error
     Ok(all_users)
 }
 
-pub async fn fetch_target_users(page: u32) -> Result<Vec<TargetMember>, Box<dyn Error>> {
+pub async fn fetch_target_users(page: u32) -> Result<Vec<TargetUser>, Box<dyn Error>> {
     let url = format!("{}/users", *TARGET_GITLAB_URL);
     let response = http::CLIENT
         .get(url)
@@ -36,11 +35,11 @@ pub async fn fetch_target_users(page: u32) -> Result<Vec<TargetMember>, Box<dyn 
         .await?
         .error_for_status()?;
     let payload = &response.text().await?;
-    let users: Vec<TargetMember> = serde_json::from_str(payload)?;
+    let users: Vec<TargetUser> = serde_json::from_str(payload)?;
     Ok(users)
 }
 
-pub async fn delete_target_user(user: TargetMember) -> Result<(), Box<dyn Error>> {
+pub async fn delete_target_user(user: TargetUser) -> Result<(), Box<dyn Error>> {
     println!("Deleting user {:?}...", user);
     let url = format!("{}/users/{}", *TARGET_GITLAB_URL, user.id);
     http::CLIENT
@@ -52,7 +51,7 @@ pub async fn delete_target_user(user: TargetMember) -> Result<(), Box<dyn Error>
     Ok(())
 }
 
-pub async fn create_target_user(user: SourceMember) -> Result<TargetMember, String> {
+pub async fn create_target_user(user: SourceUser) -> Result<TargetUser, String> {
     let user_str = format!("{:?}", user);
     let spawn_result =
         tokio::task::spawn_blocking(move || match synchronous_create_target_user(user) {
@@ -63,7 +62,7 @@ pub async fn create_target_user(user: SourceMember) -> Result<TargetMember, Stri
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
 }
 
-pub fn synchronous_create_target_user(user: SourceMember) -> Result<TargetMember, Box<dyn Error>> {
+pub fn synchronous_create_target_user(user: SourceUser) -> Result<TargetUser, Box<dyn Error>> {
     println!("Creating user {:?}...", user);
     let avatar = synchronous_download_avatar(&user)?;
     let client = reqwest::blocking::Client::new();
@@ -85,11 +84,11 @@ pub fn synchronous_create_target_user(user: SourceMember) -> Result<TargetMember
         .send()?;
 
     let payload = response.text()?;
-    let member: TargetMember = serde_json::from_str(&payload)?;
+    let member: TargetUser = serde_json::from_str(&payload)?;
     Ok(member)
 }
 
-pub fn synchronous_download_avatar(user: &SourceMember) -> Result<String, Box<dyn Error>> {
+pub fn synchronous_download_avatar(user: &SourceUser) -> Result<String, Box<dyn Error>> {
     println!("Downloading avatar for {}...", user.username);
     let client = reqwest::blocking::Client::new();
     let response = client.get(&user.avatar_url).send()?;
@@ -162,7 +161,7 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
 
 pub async fn fetch_source_members(
     membership: Membership,
-) -> Result<Vec<SourceMember>, Box<dyn Error>> {
+) -> Result<Vec<SourceUser>, Box<dyn Error>> {
     let url = format!(
         "{}/{}/{}/members",
         *SOURCE_GITLAB_URL,
@@ -176,7 +175,7 @@ pub async fn fetch_source_members(
         .send()
         .await?;
     let payload = &response.text().await?;
-    let members: Vec<SourceMember> = serde_json::from_str(payload)?;
+    let members: Vec<SourceUser> = serde_json::from_str(payload)?;
     Ok(members)
 }
 

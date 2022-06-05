@@ -1,5 +1,5 @@
 use crate::types::{
-    CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceMember, SourceProject,
+    CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceProject, SourceUser,
     SourceVariable,
 };
 use crate::{gitlab, http};
@@ -138,7 +138,7 @@ pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_source_groups().await?;
     let futures: Vec<_> = groups
         .iter()
-        .map(|group| fetch_members(Membership::Group(group.clone())))
+        .map(|group| fetch_source_members(Membership::Group(group.clone())))
         .collect();
     let group_members: HashMap<_, _> = http::politely_try_join_all(futures, 24, 500)
         .await?
@@ -148,7 +148,7 @@ pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
     let projects = gitlab::fetch_all_source_projects(groups).await?;
     let futures: Vec<_> = projects
         .into_iter()
-        .map(|project| fetch_members(Membership::Project(project)))
+        .map(|project| fetch_source_members(Membership::Project(project)))
         .collect();
     let project_members: HashMap<_, _> = http::politely_try_join_all(futures, 24, 500)
         .await?
@@ -159,11 +159,11 @@ pub async fn download_source_memberships() -> Result<(), Box<dyn Error>> {
         ("groups".to_string(), group_members),
         ("projects".to_string(), project_members),
     ]);
-    save_memberships(&all_memberships)?;
+    save_source_memberships(&all_memberships)?;
     Ok(())
 }
 
-fn save_memberships(memberships: &CachedMemberships) -> Result<(), Box<dyn Error>> {
+fn save_source_memberships(memberships: &CachedMemberships) -> Result<(), Box<dyn Error>> {
     let dir_path = "cache";
     std::fs::create_dir_all(dir_path)?;
     let json_path = format!("{}/memberships.json", dir_path);
@@ -172,9 +172,9 @@ fn save_memberships(memberships: &CachedMemberships) -> Result<(), Box<dyn Error
     Ok(())
 }
 
-pub async fn fetch_members(
+pub async fn fetch_source_members(
     membership: Membership,
-) -> Result<(String, Vec<SourceMember>), Box<dyn Error>> {
+) -> Result<(String, Vec<SourceUser>), Box<dyn Error>> {
     let key = membership.key();
     let members = gitlab::fetch_source_members(membership).await?;
     Ok((key, members))
