@@ -56,7 +56,10 @@ pub async fn import_target_project(project: SourceProject) -> Result<(), String>
     let spawn_result =
         tokio::task::spawn_blocking(move || match synchronous_import_target_project(project) {
             Ok(x) => Ok(x),
-            Err(_) => Err("Failed to import target project!".to_owned()),
+            Err(err) => {
+                println!("{:#?}", err);
+                Err("Failed to import target project!".to_owned())
+            }
         })
         .await;
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
@@ -74,16 +77,12 @@ pub fn synchronous_import_target_project(project: SourceProject) -> Result<(), B
 
     let client = reqwest::blocking::Client::new();
     let url = format!("{}/projects/import", *TARGET_GITLAB_URL);
-    let response = client
+    client
         .post(url)
         .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
         .multipart(form)
         .send()?
         .error_for_status()?;
-
-    let payload = response.text()?;
-    println!("{}", payload);
-
     Ok(())
 }
 

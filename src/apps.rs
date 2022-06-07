@@ -35,8 +35,21 @@ pub async fn import_target_projects() -> Result<(), Box<dyn Error>> {
     let metadata = std::fs::read_to_string("cache/project_metadata.json")?;
     let metadata: CachedProjectMetadata = serde_json::from_str(&metadata)?;
 
-    for (_, project) in metadata.into_iter().take(5) {
-        gitlab::import_target_project(project).await?;
+    let existing_projects = gitlab::fetch_all_target_projects().await?;
+    let existing_paths: Vec<_> = existing_projects
+        .into_iter()
+        .map(|project| project.path_with_namespace)
+        .collect();
+
+    let remaining_projects: Vec<_> = metadata
+        .into_iter()
+        .map(|(_, project)| project)
+        .filter(|project| !existing_paths.contains(&project.path_with_namespace))
+        .collect();
+    let num_remaining = remaining_projects.len();
+    for (index, project) in remaining_projects.into_iter().enumerate() {
+        let _ = gitlab::import_target_project(project).await;
+        println!("Num. remaining projects: {}", num_remaining - index - 1);
         http::throttle_for_ms(10 * 1000);
     }
 
