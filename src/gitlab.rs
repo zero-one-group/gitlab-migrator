@@ -13,9 +13,6 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
-// TODO: wire up SoureProject to import_target_project
-// TODO: dry run
-
 pub async fn delete_target_project(project: TargetProject) -> Result<(), Box<dyn Error>> {
     println!("Deleting project {:?}...", project);
     let url = format!("{}/projects/{}", *TARGET_GITLAB_URL, project.id);
@@ -55,9 +52,9 @@ pub async fn fetch_target_projects(page: u32) -> Result<Vec<TargetProject>, Box<
     Ok(projects)
 }
 
-pub async fn import_target_project() -> Result<(), String> {
+pub async fn import_target_project(project: SourceProject) -> Result<(), String> {
     let spawn_result =
-        tokio::task::spawn_blocking(move || match synchronous_import_target_project() {
+        tokio::task::spawn_blocking(move || match synchronous_import_target_project(project) {
             Ok(x) => Ok(x),
             Err(_) => Err("Failed to import target project!".to_owned()),
         })
@@ -65,13 +62,15 @@ pub async fn import_target_project() -> Result<(), String> {
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
 }
 
-pub fn synchronous_import_target_project() -> Result<(), Box<dyn Error>> {
-    let project_gz_path = "cache/projects/20076483.gz";
+pub fn synchronous_import_target_project(project: SourceProject) -> Result<(), Box<dyn Error>> {
+    println!("Importing project {:?}...", project);
+    let gz_path = format!("cache/projects/{}.gz", project.id);
+    let namespace = parse_namespace(&project);
     let form = reqwest::blocking::multipart::Form::new()
-        .text("namespace", "zo-group/software")
-        .text("name", "infra")
-        .text("path", "infra")
-        .file("file", project_gz_path)?;
+        .text("namespace", namespace)
+        .text("name", project.name)
+        .text("path", project.path)
+        .file("file", gz_path)?;
 
     let client = reqwest::blocking::Client::new();
     let url = format!("{}/projects/import", *TARGET_GITLAB_URL);
@@ -79,12 +78,25 @@ pub fn synchronous_import_target_project() -> Result<(), Box<dyn Error>> {
         .post(url)
         .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
         .multipart(form)
-        .send()?;
+        .send()?
+        .error_for_status()?;
 
     let payload = response.text()?;
     println!("{}", payload);
 
     Ok(())
+}
+
+fn parse_namespace(project: &SourceProject) -> String {
+    let mut path = project.path_with_namespace.split('/').rev();
+    path.next();
+    path.rev().fold(String::new(), |x, y| {
+        if x.is_empty() {
+            y.to_string()
+        } else {
+            x + "/" + y
+        }
+    })
 }
 
 pub async fn fetch_all_target_users() -> Result<Vec<TargetUser>, Box<dyn Error>> {

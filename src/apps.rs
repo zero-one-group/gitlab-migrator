@@ -32,7 +32,14 @@ pub async fn delete_target_projects() -> Result<(), Box<dyn Error>> {
 // Import Target Projects
 // ---------------------------------------------------------------------------
 pub async fn import_target_projects() -> Result<(), Box<dyn Error>> {
-    gitlab::import_target_project().await?;
+    let metadata = std::fs::read_to_string("cache/project_metadata.json")?;
+    let metadata: CachedProjectMetadata = serde_json::from_str(&metadata)?;
+
+    for (_, project) in metadata.into_iter().take(5) {
+        gitlab::import_target_project(project).await?;
+        http::throttle_for_ms(10 * 1000);
+    }
+
     Ok(())
 }
 
