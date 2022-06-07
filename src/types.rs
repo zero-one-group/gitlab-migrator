@@ -92,3 +92,12 @@ pub struct TargetUser {
     pub username: String,
     pub email: String,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TargetProject {
+    pub id: u32,
+    pub name: String,
+    pub path: String,
+    pub path_with_namespace: String,
+    pub archived: bool,
+}

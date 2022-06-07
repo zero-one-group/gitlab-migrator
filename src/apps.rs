@@ -8,6 +8,27 @@ use std::collections::HashMap;
 use std::error::Error;
 
 // ---------------------------------------------------------------------------
+// Delete Target Projects
+// ---------------------------------------------------------------------------
+pub async fn delete_target_projects() -> Result<(), Box<dyn Error>> {
+    let metadata = std::fs::read_to_string("cache/project_metadata.json")?;
+    let metadata: CachedProjectMetadata = serde_json::from_str(&metadata)?;
+    let project_paths: Vec<_> = metadata
+        .values()
+        .map(|project| project.path_with_namespace.to_string())
+        .collect();
+
+    let all_projects = gitlab::fetch_all_target_projects().await?;
+    let futures: Vec<_> = all_projects
+        .into_iter()
+        .filter(|project| project_paths.contains(&project.path_with_namespace))
+        .map(gitlab::delete_target_project)
+        .collect();
+    http::politely_try_join_all(futures, 8, 500).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Import Target Projects
 // ---------------------------------------------------------------------------
 pub async fn import_target_projects() -> Result<(), Box<dyn Error>> {
