@@ -9,6 +9,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("download-source-memberships") => Ok(apps::download_source_memberships().await?),
         Some("download-source-projects") => Ok(apps::download_source_projects().await?),
         Some("download-source-ci-variables") => Ok(apps::download_source_ci_variables().await?),
+        Some("download-source-project-metadata") => {
+            Ok(apps::download_source_project_metadata().await?)
+        }
         Some("create-target-users") => Ok(apps::create_target_users().await?),
         Some("delete-target-users") => Ok(apps::delete_target_users().await?),
         Some(_) => Err("Unrecognised application name!".into()),

@@ -1,11 +1,29 @@
 use crate::types::{
-    CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceProject, SourceUser,
-    SourceVariable,
+    CachedCiVariables, CachedMemberships, CachedProjectMetadata, ExportStatus, Membership,
+    SourceProject, SourceUser, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::error::Error;
+
+// ---------------------------------------------------------------------------
+// Import Target Projects
+// ---------------------------------------------------------------------------
+//pub async fn import_target_projects() -> Result<(), Box<dyn Error>> {
+//let path = "cache/projects/30339354.zip";
+
+//let form = reqwest::blocking::multipart::Form::new()
+//.text("name", user.name)
+//.text("username", user.username)
+//.text("email", email)
+//.text("force_random_password", "true")
+////.text("reset_password", "true") // TODO: uncomment
+//.text("skip_confirmation", "true")
+//.file("avatar", avatar)?;
+
+//Ok(())
+//}
 
 // ---------------------------------------------------------------------------
 // Delete Target Users
@@ -128,6 +146,32 @@ pub async fn download_project_zip(status: &ExportStatus) -> Result<(), Box<dyn E
     let mut file = std::fs::File::create(zip_path)?;
     let mut content = std::io::Cursor::new(response.bytes().await?);
     std::io::copy(&mut content, &mut file)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Download Source Project Metadata
+// ---------------------------------------------------------------------------
+pub async fn download_source_project_metadata() -> Result<(), Box<dyn Error>> {
+    let groups = gitlab::fetch_all_source_groups().await?;
+    let projects: Vec<_> = gitlab::fetch_all_source_projects(groups).await?;
+
+    let project_metadata: HashMap<_, _> = projects
+        .into_iter()
+        .map(|project| (project.id, project))
+        .collect();
+    save_source_project_metadata(&project_metadata)?;
+    Ok(())
+}
+
+fn save_source_project_metadata(
+    project_metadata: &CachedProjectMetadata,
+) -> Result<(), Box<dyn Error>> {
+    let dir_path = "cache";
+    std::fs::create_dir_all(dir_path)?;
+    let json_path = format!("{}/project_metadata.json", dir_path);
+    serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &project_metadata)?;
+    println!("Successfully wrote to {}!", json_path);
     Ok(())
 }
 

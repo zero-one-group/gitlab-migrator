@@ -81,6 +81,7 @@ pub struct ExportStatus {
     pub export_status: String,
 }
 
+pub type CachedProjectMetadata = HashMap<u32, SourceProject>;
 pub type CachedCiVariables = HashMap<String, Vec<SourceVariable>>;
 pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceUser>>>;
 
