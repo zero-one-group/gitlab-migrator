@@ -10,20 +10,10 @@ use std::error::Error;
 // ---------------------------------------------------------------------------
 // Import Target Projects
 // ---------------------------------------------------------------------------
-//pub async fn import_target_projects() -> Result<(), Box<dyn Error>> {
-//let path = "cache/projects/30339354.zip";
-
-//let form = reqwest::blocking::multipart::Form::new()
-//.text("name", user.name)
-//.text("username", user.username)
-//.text("email", email)
-//.text("force_random_password", "true")
-////.text("reset_password", "true") // TODO: uncomment
-//.text("skip_confirmation", "true")
-//.file("avatar", avatar)?;
-
-//Ok(())
-//}
+pub async fn import_target_projects() -> Result<(), Box<dyn Error>> {
+    gitlab::import_target_project().await?;
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Delete Target Users
@@ -107,8 +97,8 @@ pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
         .into_iter()
         .filter(|project| {
             let dir_path = "cache/projects";
-            let zip_path = format!("{}/{}.zip", dir_path, project.id);
-            !std::path::Path::new(&zip_path).exists()
+            let gz_path = format!("{}/{}.gz", dir_path, project.id);
+            !std::path::Path::new(&gz_path).exists()
         })
         .collect();
 
@@ -119,31 +109,31 @@ pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
     }
 
     for (index, project) in projects.iter().enumerate() {
-        wait_and_save_project_zip(project.id).await?;
+        wait_and_save_project_gz(project.id).await?;
         println!("Completed ({}/{}) downloads!", index + 1, projects.len());
         http::throttle_for_ms(60 * 1000);
     }
     Ok(())
 }
 
-pub async fn wait_and_save_project_zip(project_id: u32) -> Result<(), Box<dyn Error>> {
+pub async fn wait_and_save_project_gz(project_id: u32) -> Result<(), Box<dyn Error>> {
     let mut status = gitlab::fetch_export_status(project_id).await?;
     while status.export_status != "finished" {
         println!("Waiting for the following to complete: {:?}", status);
         http::throttle_for_ms(15 * 1000);
         status = gitlab::fetch_export_status(project_id).await?;
     }
-    download_project_zip(&status).await?;
+    download_project_gz(&status).await?;
     println!("Exported project saved! {:?}", status);
     Ok(())
 }
 
-pub async fn download_project_zip(status: &ExportStatus) -> Result<(), Box<dyn Error>> {
-    let response = gitlab::download_source_project_zip(status).await?;
+pub async fn download_project_gz(status: &ExportStatus) -> Result<(), Box<dyn Error>> {
+    let response = gitlab::download_source_project_gz(status).await?;
     let dir_path = "cache/projects";
     std::fs::create_dir_all(dir_path)?;
-    let zip_path = format!("{}/{}.zip", dir_path, status.id);
-    let mut file = std::fs::File::create(zip_path)?;
+    let gz_path = format!("{}/{}.gz", dir_path, status.id);
+    let mut file = std::fs::File::create(gz_path)?;
     let mut content = std::io::Cursor::new(response.bytes().await?);
     std::io::copy(&mut content, &mut file)?;
     Ok(())

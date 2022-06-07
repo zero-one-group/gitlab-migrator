@@ -12,6 +12,38 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
+pub async fn import_target_project() -> Result<(), String> {
+    let spawn_result =
+        tokio::task::spawn_blocking(move || match synchronous_import_target_project() {
+            Ok(x) => Ok(x),
+            Err(_) => Err("Failed to import target project!".to_owned()),
+        })
+        .await;
+    spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
+}
+
+pub fn synchronous_import_target_project() -> Result<(), Box<dyn Error>> {
+    let project_gz_path = "cache/projects/20076483.gz";
+    let form = reqwest::blocking::multipart::Form::new()
+        .text("namespace", "zo-group/software")
+        .text("name", "infra")
+        .text("path", "infra")
+        .file("file", project_gz_path)?;
+
+    let client = reqwest::blocking::Client::new();
+    let url = format!("{}/projects/import", *TARGET_GITLAB_URL);
+    let response = client
+        .post(url)
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .multipart(form)
+        .send()?;
+
+    let payload = response.text()?;
+    println!("{}", payload);
+
+    Ok(())
+}
+
 pub async fn fetch_all_target_users() -> Result<Vec<TargetUser>, Box<dyn Error>> {
     let mut all_users = vec![];
     let mut latest_page = 1;
@@ -119,9 +151,7 @@ pub async fn fetch_source_ci_variables(
     }
 }
 
-pub async fn download_source_project_zip(
-    status: &ExportStatus,
-) -> Result<Response, Box<dyn Error>> {
+pub async fn download_source_project_gz(status: &ExportStatus) -> Result<Response, Box<dyn Error>> {
     let url = format!(
         "{}/projects/{}/export/download",
         *SOURCE_GITLAB_URL, status.id
