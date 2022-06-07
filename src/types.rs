@@ -81,6 +81,7 @@ pub struct ExportStatus {
     pub export_status: String,
 }
 
+pub type CachedProjectMetadata = HashMap<u32, SourceProject>;
 pub type CachedCiVariables = HashMap<String, Vec<SourceVariable>>;
 pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceUser>>>;
 
@@ -90,4 +91,13 @@ pub struct TargetUser {
     pub name: String,
     pub username: String,
     pub email: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TargetProject {
+    pub id: u32,
+    pub name: String,
+    pub path: String,
+    pub path_with_namespace: String,
+    pub archived: bool,
 }

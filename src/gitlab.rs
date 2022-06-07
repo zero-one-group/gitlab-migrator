@@ -1,5 +1,6 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable, TargetUser,
+    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable,
+    TargetProject, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -10,6 +11,92 @@ lazy_static::lazy_static! {
     pub static ref SOURCE_GITLAB_TOKEN: String = env::load_env("SOURCE_GITLAB_TOKEN");
     pub static ref TARGET_GITLAB_URL: String = env::load_env("TARGET_GITLAB_URL");
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
+}
+
+pub async fn delete_target_project(project: TargetProject) -> Result<(), Box<dyn Error>> {
+    println!("Deleting project {:?}...", project);
+    let url = format!("{}/projects/{}", *TARGET_GITLAB_URL, project.id);
+    http::CLIENT
+        .delete(url)
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+pub async fn fetch_all_target_projects() -> Result<Vec<TargetProject>, Box<dyn Error>> {
+    let mut all_projects = vec![];
+    let mut latest_page = 1;
+    let mut latest_len = 0;
+    while latest_len == 100 || latest_page == 1 {
+        let mut projects = fetch_target_projects(latest_page).await?;
+        latest_len = projects.len();
+        latest_page += 1;
+        all_projects.append(&mut projects);
+    }
+    Ok(all_projects)
+}
+
+pub async fn fetch_target_projects(page: u32) -> Result<Vec<TargetProject>, Box<dyn Error>> {
+    let url = format!("{}/projects", *TARGET_GITLAB_URL);
+    let response = http::CLIENT
+        .get(url)
+        .query(&[("per_page", "100"), ("page", &page.to_string())])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?;
+    let payload = &response.text().await?;
+    let projects: Vec<TargetProject> = serde_json::from_str(payload)?;
+    Ok(projects)
+}
+
+pub async fn import_target_project(project: SourceProject) -> Result<(), String> {
+    let spawn_result =
+        tokio::task::spawn_blocking(move || match synchronous_import_target_project(project) {
+            Ok(x) => Ok(x),
+            Err(_) => Err("Failed to import target project!".to_owned()),
+        })
+        .await;
+    spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
+}
+
+pub fn synchronous_import_target_project(project: SourceProject) -> Result<(), Box<dyn Error>> {
+    println!("Importing project {:?}...", project);
+    let gz_path = format!("cache/projects/{}.gz", project.id);
+    let namespace = parse_namespace(&project);
+    let form = reqwest::blocking::multipart::Form::new()
+        .text("namespace", namespace)
+        .text("name", project.name)
+        .text("path", project.path)
+        .file("file", gz_path)?;
+
+    let client = reqwest::blocking::Client::new();
+    let url = format!("{}/projects/import", *TARGET_GITLAB_URL);
+    let response = client
+        .post(url)
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .multipart(form)
+        .send()?
+        .error_for_status()?;
+
+    let payload = response.text()?;
+    println!("{}", payload);
+
+    Ok(())
+}
+
+fn parse_namespace(project: &SourceProject) -> String {
+    let mut path = project.path_with_namespace.split('/').rev();
+    path.next();
+    path.rev().fold(String::new(), |x, y| {
+        if x.is_empty() {
+            y.to_string()
+        } else {
+            x + "/" + y
+        }
+    })
 }
 
 pub async fn fetch_all_target_users() -> Result<Vec<TargetUser>, Box<dyn Error>> {
@@ -119,9 +206,7 @@ pub async fn fetch_source_ci_variables(
     }
 }
 
-pub async fn download_source_project_zip(
-    status: &ExportStatus,
-) -> Result<Response, Box<dyn Error>> {
+pub async fn download_source_project_gz(status: &ExportStatus) -> Result<Response, Box<dyn Error>> {
     let url = format!(
         "{}/projects/{}/export/download",
         *SOURCE_GITLAB_URL, status.id
@@ -224,6 +309,7 @@ pub async fn fetch_source_groups_projects(
     let projects: Vec<SourceProject> = serde_json::from_str(payload)?;
     Ok(projects)
 }
+
 pub async fn fetch_all_source_groups() -> Result<Vec<SourceGroup>, Box<dyn Error>> {
     let mut all_groups = vec![];
     let mut latest_page = 1;

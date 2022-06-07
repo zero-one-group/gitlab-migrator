@@ -1,11 +1,47 @@
 use crate::types::{
-    CachedCiVariables, CachedMemberships, ExportStatus, Membership, SourceProject, SourceUser,
-    SourceVariable,
+    CachedCiVariables, CachedMemberships, CachedProjectMetadata, ExportStatus, Membership,
+    SourceProject, SourceUser, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::error::Error;
+
+// ---------------------------------------------------------------------------
+// Delete Target Projects
+// ---------------------------------------------------------------------------
+pub async fn delete_target_projects() -> Result<(), Box<dyn Error>> {
+    let metadata = std::fs::read_to_string("cache/project_metadata.json")?;
+    let metadata: CachedProjectMetadata = serde_json::from_str(&metadata)?;
+    let project_paths: Vec<_> = metadata
+        .values()
+        .map(|project| project.path_with_namespace.to_string())
+        .collect();
+
+    let all_projects = gitlab::fetch_all_target_projects().await?;
+    let futures: Vec<_> = all_projects
+        .into_iter()
+        .filter(|project| project_paths.contains(&project.path_with_namespace))
+        .map(gitlab::delete_target_project)
+        .collect();
+    http::politely_try_join_all(futures, 8, 500).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Import Target Projects
+// ---------------------------------------------------------------------------
+pub async fn import_target_projects() -> Result<(), Box<dyn Error>> {
+    let metadata = std::fs::read_to_string("cache/project_metadata.json")?;
+    let metadata: CachedProjectMetadata = serde_json::from_str(&metadata)?;
+
+    for (_, project) in metadata.into_iter().take(5) {
+        gitlab::import_target_project(project).await?;
+        http::throttle_for_ms(10 * 1000);
+    }
+
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Delete Target Users
@@ -89,8 +125,8 @@ pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
         .into_iter()
         .filter(|project| {
             let dir_path = "cache/projects";
-            let zip_path = format!("{}/{}.zip", dir_path, project.id);
-            !std::path::Path::new(&zip_path).exists()
+            let gz_path = format!("{}/{}.gz", dir_path, project.id);
+            !std::path::Path::new(&gz_path).exists()
         })
         .collect();
 
@@ -101,33 +137,59 @@ pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
     }
 
     for (index, project) in projects.iter().enumerate() {
-        wait_and_save_project_zip(project.id).await?;
+        wait_and_save_project_gz(project.id).await?;
         println!("Completed ({}/{}) downloads!", index + 1, projects.len());
         http::throttle_for_ms(60 * 1000);
     }
     Ok(())
 }
 
-pub async fn wait_and_save_project_zip(project_id: u32) -> Result<(), Box<dyn Error>> {
+pub async fn wait_and_save_project_gz(project_id: u32) -> Result<(), Box<dyn Error>> {
     let mut status = gitlab::fetch_export_status(project_id).await?;
     while status.export_status != "finished" {
         println!("Waiting for the following to complete: {:?}", status);
         http::throttle_for_ms(15 * 1000);
         status = gitlab::fetch_export_status(project_id).await?;
     }
-    download_project_zip(&status).await?;
+    download_project_gz(&status).await?;
     println!("Exported project saved! {:?}", status);
     Ok(())
 }
 
-pub async fn download_project_zip(status: &ExportStatus) -> Result<(), Box<dyn Error>> {
-    let response = gitlab::download_source_project_zip(status).await?;
+pub async fn download_project_gz(status: &ExportStatus) -> Result<(), Box<dyn Error>> {
+    let response = gitlab::download_source_project_gz(status).await?;
     let dir_path = "cache/projects";
     std::fs::create_dir_all(dir_path)?;
-    let zip_path = format!("{}/{}.zip", dir_path, status.id);
-    let mut file = std::fs::File::create(zip_path)?;
+    let gz_path = format!("{}/{}.gz", dir_path, status.id);
+    let mut file = std::fs::File::create(gz_path)?;
     let mut content = std::io::Cursor::new(response.bytes().await?);
     std::io::copy(&mut content, &mut file)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Download Source Project Metadata
+// ---------------------------------------------------------------------------
+pub async fn download_source_project_metadata() -> Result<(), Box<dyn Error>> {
+    let groups = gitlab::fetch_all_source_groups().await?;
+    let projects: Vec<_> = gitlab::fetch_all_source_projects(groups).await?;
+
+    let project_metadata: HashMap<_, _> = projects
+        .into_iter()
+        .map(|project| (project.id, project))
+        .collect();
+    save_source_project_metadata(&project_metadata)?;
+    Ok(())
+}
+
+fn save_source_project_metadata(
+    project_metadata: &CachedProjectMetadata,
+) -> Result<(), Box<dyn Error>> {
+    let dir_path = "cache";
+    std::fs::create_dir_all(dir_path)?;
+    let json_path = format!("{}/project_metadata.json", dir_path);
+    serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &project_metadata)?;
+    println!("Successfully wrote to {}!", json_path);
     Ok(())
 }
 
