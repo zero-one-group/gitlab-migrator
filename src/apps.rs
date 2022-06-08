@@ -1,6 +1,6 @@
 use crate::types::{
     CachedCiVariables, CachedMemberships, CachedProjectMetadata, ExportStatus, Membership,
-    SourceProject, SourceUser, SourceVariable,
+    SourceMember, SourceProject, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
@@ -24,29 +24,30 @@ pub async fn add_target_users_to_groups() -> Result<(), Box<dyn Error>> {
         .collect();
 
     let memberships = std::fs::read_to_string("cache/memberships.json")?;
-    let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
-    let default = HashMap::new();
-    let group_memberships = memberships.get("groups").unwrap_or(&default);
+    let mut memberships: CachedMemberships = serde_json::from_str(&memberships)?;
+    let group_memberships = memberships.remove("groups").unwrap_or_default();
 
     let futures: Vec<_> = group_memberships
-        .iter()
+        .into_iter()
         .flat_map(|(group_path, members)| {
             members
-                .iter()
-                .map(|member| (group_path.clone(), member.clone()))
+                .into_iter()
+                .map(move |member| (group_path.clone(), member))
         })
         .filter_map(|(group_path, member)| {
-            let group = group_ids.get(&group_path);
-            let user = user_ids.get(&member.username);
-            match (group, user) {
-                (Some(x), Some(y)) => Some((x, y)),
+            let group_option = group_ids.get(&group_path);
+            let user_option = user_ids.get(&member.username);
+            match (group_option, user_option) {
+                (Some(group), Some(user)) => Some(gitlab::add_target_project_member(
+                    group.clone(),
+                    user.clone(),
+                    member,
+                )),
                 _ => None,
             }
         })
-        //.map(|(group_id, user_id)| gitlab::add_target_project_member(group_id, user_id));
         .collect();
-    println!("{:#?}", futures);
-
+    http::politely_try_join_all(futures, 8, 500).await?;
     Ok(())
 }
 
@@ -141,11 +142,11 @@ pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
 
     let futures: Vec<_> = memberships
         .values()
-        .flat_map(|user| user.values())
+        .flat_map(|member| member.values())
         .flatten()
-        .unique_by(|user| user.id)
-        .filter(|user| !existing_usernames.contains(&user.username))
-        .map(|user| gitlab::create_target_user(user.clone(), &email_mapping))
+        .unique_by(|member| member.id)
+        .filter(|member| !existing_usernames.contains(&member.username))
+        .map(|member| gitlab::create_target_user(member.to_user(), &email_mapping))
         .collect();
     println!("Creating target users for {} users...", futures.len());
     http::politely_try_join_all(futures, 8, 500).await?;
@@ -303,7 +304,7 @@ fn save_source_memberships(memberships: &CachedMemberships) -> Result<(), Box<dy
 
 pub async fn fetch_source_members(
     membership: Membership,
-) -> Result<(String, Vec<SourceUser>), Box<dyn Error>> {
+) -> Result<(String, Vec<SourceMember>), Box<dyn Error>> {
     let key = membership.key();
     let members = gitlab::fetch_source_members(membership).await?;
     Ok((key, members))

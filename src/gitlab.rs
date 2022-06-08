@@ -1,6 +1,6 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable, TargetGroup,
-    TargetProject, TargetUser,
+    ExportStatus, Membership, SourceGroup, SourceMember, SourceProject, SourceUser, SourceVariable,
+    TargetGroup, TargetProject, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -14,7 +14,30 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
-// TODO: add_target_project_member
+pub async fn add_target_project_member(
+    group: TargetGroup,
+    user: TargetUser,
+    member: SourceMember,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "Adding user {:?} to group {:?} from access level {:?}...",
+        user, group, member.access_level
+    );
+    let url = format!("{}/groups/{}/members", *TARGET_GITLAB_URL, group.id);
+    let response = http::CLIENT
+        .post(url)
+        .form(&[
+            ("user_id", &user.id.to_string()),
+            ("access_level", &member.access_level.to_string()),
+        ])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    if let Err(err) = response.error_for_status() {
+        println!("{}", err);
+    }
+    Ok(())
+}
 
 pub async fn fetch_all_target_groups() -> Result<Vec<TargetGroup>, Box<dyn Error>> {
     let mut all_groups = vec![];
@@ -284,7 +307,7 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
 
 pub async fn fetch_source_members(
     membership: Membership,
-) -> Result<Vec<SourceUser>, Box<dyn Error>> {
+) -> Result<Vec<SourceMember>, Box<dyn Error>> {
     let url = format!(
         "{}/{}/{}/members",
         *SOURCE_GITLAB_URL,
@@ -298,7 +321,7 @@ pub async fn fetch_source_members(
         .send()
         .await?;
     let payload = &response.text().await?;
-    let members: Vec<SourceUser> = serde_json::from_str(payload)?;
+    let members: Vec<SourceMember> = serde_json::from_str(payload)?;
     Ok(members)
 }
 

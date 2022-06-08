@@ -38,6 +38,26 @@ pub struct SourceUser {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SourceMember {
+    pub id: u32,
+    pub name: String,
+    pub username: String,
+    pub avatar_url: String,
+    pub access_level: u32,
+}
+
+impl SourceMember {
+    pub fn to_user(&self) -> SourceUser {
+        SourceUser {
+            id: self.id,
+            name: self.name.to_owned(),
+            username: self.username.to_owned(),
+            avatar_url: self.avatar_url.to_owned(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SourceVariable {
     pub variable_type: String,
     pub key: String,
@@ -83,7 +103,7 @@ pub struct ExportStatus {
 
 pub type CachedProjectMetadata = HashMap<u32, SourceProject>;
 pub type CachedCiVariables = HashMap<String, Vec<SourceVariable>>;
-pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceUser>>>;
+pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceMember>>>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TargetUser {
