@@ -4,6 +4,7 @@ use crate::types::{
 };
 use crate::{env, http};
 use reqwest::Response;
+use std::collections::HashMap;
 use std::error::Error;
 
 lazy_static::lazy_static! {
@@ -137,23 +138,32 @@ pub async fn delete_target_user(user: TargetUser) -> Result<(), Box<dyn Error>> 
     Ok(())
 }
 
-pub async fn create_target_user(user: SourceUser) -> Result<TargetUser, String> {
+pub async fn create_target_user(
+    user: SourceUser,
+    email_mapping: &HashMap<String, String>,
+) -> Result<TargetUser, String> {
     let user_str = format!("{:?}", user);
+    let email = match email_mapping.get(&user.username) {
+        Some(x) => x.to_string(),
+        None => format!("{}@test.com", user.username),
+    };
     let spawn_result =
-        tokio::task::spawn_blocking(move || match synchronous_create_target_user(user) {
+        tokio::task::spawn_blocking(move || match synchronous_create_target_user(user, email) {
             Ok(x) => Ok(x),
-            Err(_) => Err(format!("Failed to create {:?}.", user_str)),
+            Err(err) => Err(format!("Failed to create {:?}\n{}.", user_str, err)),
         })
         .await;
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
 }
 
-pub fn synchronous_create_target_user(user: SourceUser) -> Result<TargetUser, Box<dyn Error>> {
-    println!("Creating user {:?}...", user);
+pub fn synchronous_create_target_user(
+    user: SourceUser,
+    email: String,
+) -> Result<TargetUser, Box<dyn Error>> {
+    println!("Creating user {:?} with email {}...", user, email);
     let avatar = synchronous_download_avatar(&user)?;
     let client = reqwest::blocking::Client::new();
     let url = format!("{}/users", *TARGET_GITLAB_URL);
-    let email = format!("{}@example.com", user.username); // FIXME: use real emails
     let form = reqwest::blocking::multipart::Form::new()
         .text("name", user.name)
         .text("username", user.username)
@@ -167,7 +177,8 @@ pub fn synchronous_create_target_user(user: SourceUser) -> Result<TargetUser, Bo
         .post(url)
         .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
         .multipart(form)
-        .send()?;
+        .send()?
+        .error_for_status()?;
 
     let payload = response.text()?;
     let member: TargetUser = serde_json::from_str(&payload)?;

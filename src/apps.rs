@@ -87,13 +87,24 @@ pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
     let memberships = std::fs::read_to_string("cache/memberships.json")?;
     let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
 
+    let email_mapping = std::fs::read_to_string("cache/username_email_mapping.json")?;
+    let email_mapping: HashMap<String, String> = serde_json::from_str(&email_mapping)?;
+
+    let existing_users = gitlab::fetch_all_target_users().await?;
+    let existing_usernames: Vec<_> = existing_users
+        .into_iter()
+        .map(|user| user.username)
+        .collect();
+
     let futures: Vec<_> = memberships
         .values()
         .flat_map(|user| user.values())
         .flatten()
         .unique_by(|user| user.id)
-        .map(|user| gitlab::create_target_user(user.clone()))
+        .filter(|user| !existing_usernames.contains(&user.username))
+        .map(|user| gitlab::create_target_user(user.clone(), &email_mapping))
         .collect();
+    println!("Creating target users for {} users...", futures.len());
     http::politely_try_join_all(futures, 8, 500).await?;
     Ok(())
 }
