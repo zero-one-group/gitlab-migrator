@@ -7,8 +7,51 @@ use itertools::Itertools;
 use std::collections::HashMap;
 use std::error::Error;
 
-// TODO: download source issues
-// TODO: reassign target issues
+// ---------------------------------------------------------------------------
+// Reassign Target Issues
+// ---------------------------------------------------------------------------
+pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
+    let projects: HashMap<_, _> = gitlab::fetch_all_target_projects()
+        .await?
+        .into_iter()
+        .map(|project| (project.key(), project))
+        .collect();
+
+    let users: HashMap<_, _> = gitlab::fetch_all_target_users()
+        .await?
+        .into_iter()
+        .map(|user| (user.key(), user))
+        .collect();
+
+    let all_issues = std::fs::read_to_string("cache/issues.json")?;
+    let all_issues: CachedIssues = serde_json::from_str(&all_issues)?;
+
+    let futures: Vec<_> = all_issues
+        .into_iter()
+        .flat_map(|(key, issues)| match projects.get(&key) {
+            Some(project) => {
+                let pairs: Vec<_> = issues
+                    .into_iter()
+                    .filter_map(|issue| {
+                        let assignee_username = issue
+                            .assignee
+                            .as_ref()
+                            .map(|x| x.username.to_owned())
+                            .unwrap_or_default();
+                        let target_user_option = users.get(&assignee_username);
+                        target_user_option
+                            .map(|user| gitlab::reassign_target_issue(issue, project, user))
+                    })
+                    .collect();
+                pairs
+            }
+            None => vec![],
+        })
+        .collect();
+    http::politely_try_join_all(futures, 24, 500).await?;
+
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Add Target Users to Groups

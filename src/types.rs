@@ -132,6 +132,12 @@ pub struct TargetUser {
     pub email: String,
 }
 
+impl TargetUser {
+    pub fn key(&self) -> String {
+        self.username.to_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TargetProject {
     pub id: u32,
@@ -139,6 +145,12 @@ pub struct TargetProject {
     pub path: String,
     pub path_with_namespace: String,
     pub archived: bool,
+}
+
+impl TargetProject {
+    pub fn key(&self) -> String {
+        self.path_with_namespace.to_string()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

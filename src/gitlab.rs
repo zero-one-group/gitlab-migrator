@@ -14,6 +14,31 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
+pub async fn reassign_target_issue(
+    issue: SourceIssue,
+    project: &TargetProject,
+    assignee: &TargetUser,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "Reassigning issue {:?} in project {:?} to {:?}...",
+        issue, project, assignee
+    );
+    let url = format!(
+        "{}/projects/{}/issues/{}",
+        *TARGET_GITLAB_URL, project.id, issue.iid
+    );
+    let response = http::CLIENT
+        .put(url)
+        .form(&[("assignee_id", assignee.id)])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    if let Err(err) = response.error_for_status() {
+        println!("{}", err);
+    }
+    Ok(())
+}
+
 pub async fn add_target_project_member(
     group: TargetGroup,
     user: TargetUser,
