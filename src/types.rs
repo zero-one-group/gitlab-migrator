@@ -101,3 +101,10 @@ pub struct TargetProject {
     pub path_with_namespace: String,
     pub archived: bool,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TargetGroup {
+    pub id: u32,
+    pub name: String,
+    pub full_path: String,
+}

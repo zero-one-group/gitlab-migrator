@@ -8,6 +8,49 @@ use std::collections::HashMap;
 use std::error::Error;
 
 // ---------------------------------------------------------------------------
+// Add Target Users to Groups
+// ---------------------------------------------------------------------------
+pub async fn add_target_users_to_groups() -> Result<(), Box<dyn Error>> {
+    let groups = gitlab::fetch_all_target_groups().await?;
+    let group_ids: HashMap<_, _> = groups
+        .into_iter()
+        .map(|group| (group.full_path.clone(), group))
+        .collect();
+
+    let users = gitlab::fetch_all_target_users().await?;
+    let user_ids: HashMap<_, _> = users
+        .into_iter()
+        .map(|user| (user.username.clone(), user))
+        .collect();
+
+    let memberships = std::fs::read_to_string("cache/memberships.json")?;
+    let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
+    let default = HashMap::new();
+    let group_memberships = memberships.get("groups").unwrap_or(&default);
+
+    let futures: Vec<_> = group_memberships
+        .iter()
+        .flat_map(|(group_path, members)| {
+            members
+                .iter()
+                .map(|member| (group_path.clone(), member.clone()))
+        })
+        .filter_map(|(group_path, member)| {
+            let group = group_ids.get(&group_path);
+            let user = user_ids.get(&member.username);
+            match (group, user) {
+                (Some(x), Some(y)) => Some((x, y)),
+                _ => None,
+            }
+        })
+        //.map(|(group_id, user_id)| gitlab::add_target_project_member(group_id, user_id));
+        .collect();
+    println!("{:#?}", futures);
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Delete Target Projects
 // ---------------------------------------------------------------------------
 pub async fn delete_target_projects() -> Result<(), Box<dyn Error>> {

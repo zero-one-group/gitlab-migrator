@@ -1,5 +1,5 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable,
+    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable, TargetGroup,
     TargetProject, TargetUser,
 };
 use crate::{env, http};
@@ -12,6 +12,34 @@ lazy_static::lazy_static! {
     pub static ref SOURCE_GITLAB_TOKEN: String = env::load_env("SOURCE_GITLAB_TOKEN");
     pub static ref TARGET_GITLAB_URL: String = env::load_env("TARGET_GITLAB_URL");
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
+}
+
+// TODO: add_target_project_member
+
+pub async fn fetch_all_target_groups() -> Result<Vec<TargetGroup>, Box<dyn Error>> {
+    let mut all_groups = vec![];
+    let mut latest_page = 1;
+    let mut latest_len = 0;
+    while latest_len == 100 || latest_page == 1 {
+        let mut groups = fetch_target_groups(latest_page).await?;
+        latest_len = groups.len();
+        latest_page += 1;
+        all_groups.append(&mut groups);
+    }
+    Ok(all_groups)
+}
+
+async fn fetch_target_groups(page: u32) -> Result<Vec<TargetGroup>, Box<dyn Error>> {
+    let url = format!("{}/groups/", *TARGET_GITLAB_URL);
+    let response = http::CLIENT
+        .get(url)
+        .query(&[("per_page", "100"), ("page", &page.to_string())])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    let payload = &response.text().await?;
+    let groups: Vec<TargetGroup> = serde_json::from_str(payload)?;
+    Ok(groups)
 }
 
 pub async fn delete_target_project(project: TargetProject) -> Result<(), Box<dyn Error>> {
