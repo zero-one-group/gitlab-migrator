@@ -1,9 +1,10 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceProject, SourceUser, SourceVariable,
-    TargetProject, TargetUser,
+    ExportStatus, Membership, SourceGroup, SourceIssue, SourceMember, SourceProject, SourceUser,
+    SourceVariable, TargetGroup, TargetProject, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
+use std::collections::HashMap;
 use std::error::Error;
 
 lazy_static::lazy_static! {
@@ -11,6 +12,82 @@ lazy_static::lazy_static! {
     pub static ref SOURCE_GITLAB_TOKEN: String = env::load_env("SOURCE_GITLAB_TOKEN");
     pub static ref TARGET_GITLAB_URL: String = env::load_env("TARGET_GITLAB_URL");
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
+}
+
+pub async fn reassign_target_issue(
+    issue: SourceIssue,
+    project: &TargetProject,
+    assignee: &TargetUser,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "Reassigning issue {:?} in project {:?} to {:?}...",
+        issue, project, assignee
+    );
+    let url = format!(
+        "{}/projects/{}/issues/{}",
+        *TARGET_GITLAB_URL, project.id, issue.iid
+    );
+    let response = http::CLIENT
+        .put(url)
+        .form(&[("assignee_id", assignee.id)])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    if let Err(err) = response.error_for_status() {
+        println!("{}", err);
+    }
+    Ok(())
+}
+
+pub async fn add_target_project_member(
+    group: TargetGroup,
+    user: TargetUser,
+    member: SourceMember,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "Adding user {:?} to group {:?} from access level {:?}...",
+        user, group, member.access_level
+    );
+    let url = format!("{}/groups/{}/members", *TARGET_GITLAB_URL, group.id);
+    let response = http::CLIENT
+        .post(url)
+        .form(&[
+            ("user_id", &user.id.to_string()),
+            ("access_level", &member.access_level.to_string()),
+        ])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    if let Err(err) = response.error_for_status() {
+        println!("{}", err);
+    }
+    Ok(())
+}
+
+pub async fn fetch_all_target_groups() -> Result<Vec<TargetGroup>, Box<dyn Error>> {
+    let mut all_groups = vec![];
+    let mut latest_page = 1;
+    let mut latest_len = 0;
+    while latest_len == 100 || latest_page == 1 {
+        let mut groups = fetch_target_groups(latest_page).await?;
+        latest_len = groups.len();
+        latest_page += 1;
+        all_groups.append(&mut groups);
+    }
+    Ok(all_groups)
+}
+
+async fn fetch_target_groups(page: u32) -> Result<Vec<TargetGroup>, Box<dyn Error>> {
+    let url = format!("{}/groups/", *TARGET_GITLAB_URL);
+    let response = http::CLIENT
+        .get(url)
+        .query(&[("per_page", "100"), ("page", &page.to_string())])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    let payload = &response.text().await?;
+    let groups: Vec<TargetGroup> = serde_json::from_str(payload)?;
+    Ok(groups)
 }
 
 pub async fn delete_target_project(project: TargetProject) -> Result<(), Box<dyn Error>> {
@@ -137,23 +214,32 @@ pub async fn delete_target_user(user: TargetUser) -> Result<(), Box<dyn Error>> 
     Ok(())
 }
 
-pub async fn create_target_user(user: SourceUser) -> Result<TargetUser, String> {
+pub async fn create_target_user(
+    user: SourceUser,
+    email_mapping: &HashMap<String, String>,
+) -> Result<TargetUser, String> {
     let user_str = format!("{:?}", user);
+    let email = match email_mapping.get(&user.username) {
+        Some(x) => x.to_string(),
+        None => format!("{}@test.com", user.username),
+    };
     let spawn_result =
-        tokio::task::spawn_blocking(move || match synchronous_create_target_user(user) {
+        tokio::task::spawn_blocking(move || match synchronous_create_target_user(user, email) {
             Ok(x) => Ok(x),
-            Err(_) => Err(format!("Failed to create {:?}.", user_str)),
+            Err(err) => Err(format!("Failed to create {:?}\n{}.", user_str, err)),
         })
         .await;
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
 }
 
-pub fn synchronous_create_target_user(user: SourceUser) -> Result<TargetUser, Box<dyn Error>> {
-    println!("Creating user {:?}...", user);
+pub fn synchronous_create_target_user(
+    user: SourceUser,
+    email: String,
+) -> Result<TargetUser, Box<dyn Error>> {
+    println!("Creating user {:?} with email {}...", user, email);
     let avatar = synchronous_download_avatar(&user)?;
     let client = reqwest::blocking::Client::new();
     let url = format!("{}/users", *TARGET_GITLAB_URL);
-    let email = format!("{}@example.com", user.username); // FIXME: use real emails
     let form = reqwest::blocking::multipart::Form::new()
         .text("name", user.name)
         .text("username", user.username)
@@ -167,7 +253,8 @@ pub fn synchronous_create_target_user(user: SourceUser) -> Result<TargetUser, Bo
         .post(url)
         .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
         .multipart(form)
-        .send()?;
+        .send()?
+        .error_for_status()?;
 
     let payload = response.text()?;
     let member: TargetUser = serde_json::from_str(&payload)?;
@@ -203,6 +290,38 @@ pub async fn fetch_source_ci_variables(
     } else {
         Ok(vec![])
     }
+}
+
+pub async fn fetch_all_source_issues(
+    project: &SourceProject,
+) -> Result<Vec<SourceIssue>, Box<dyn Error>> {
+    println!("Fetching all issues for {:?}...", project);
+    let mut all_groups = vec![];
+    let mut latest_page = 1;
+    let mut latest_len = 0;
+    while latest_len == 100 || latest_page == 1 {
+        let mut groups = fetch_source_issues(project, latest_page).await?;
+        latest_len = groups.len();
+        latest_page += 1;
+        all_groups.append(&mut groups);
+    }
+    Ok(all_groups)
+}
+
+async fn fetch_source_issues(
+    project: &SourceProject,
+    page: u32,
+) -> Result<Vec<SourceIssue>, Box<dyn Error>> {
+    let url = format!("{}/projects/{}/issues", *SOURCE_GITLAB_URL, project.id);
+    let response = http::CLIENT
+        .get(url)
+        .query(&[("per_page", "100"), ("page", &page.to_string())])
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
+        .send()
+        .await?;
+    let payload = &response.text().await?;
+    let groups: Vec<SourceIssue> = serde_json::from_str(payload)?;
+    Ok(groups)
 }
 
 pub async fn download_source_project_gz(status: &ExportStatus) -> Result<Response, Box<dyn Error>> {
@@ -245,7 +364,7 @@ pub async fn fetch_export_status(project_id: u32) -> Result<ExportStatus, Box<dy
 
 pub async fn fetch_source_members(
     membership: Membership,
-) -> Result<Vec<SourceUser>, Box<dyn Error>> {
+) -> Result<Vec<SourceMember>, Box<dyn Error>> {
     let url = format!(
         "{}/{}/{}/members",
         *SOURCE_GITLAB_URL,
@@ -259,7 +378,7 @@ pub async fn fetch_source_members(
         .send()
         .await?;
     let payload = &response.text().await?;
-    let members: Vec<SourceUser> = serde_json::from_str(payload)?;
+    let members: Vec<SourceMember> = serde_json::from_str(payload)?;
     Ok(members)
 }
 
