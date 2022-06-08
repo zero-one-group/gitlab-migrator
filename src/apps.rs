@@ -1,11 +1,14 @@
 use crate::types::{
-    CachedCiVariables, CachedMemberships, CachedProjectMetadata, ExportStatus, Membership,
-    SourceMember, SourceProject, SourceVariable,
+    CachedCiVariables, CachedIssues, CachedMemberships, CachedProjectMetadata, ExportStatus,
+    Membership, SourceIssue, SourceMember, SourceProject, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::error::Error;
+
+// TODO: download source issues
+// TODO: reassign target issues
 
 // ---------------------------------------------------------------------------
 // Add Target Users to Groups
@@ -181,6 +184,39 @@ pub async fn fetch_source_ci_variables(
     let key = project.key();
     let variables = gitlab::fetch_source_ci_variables(project).await?;
     Ok((key, variables))
+}
+
+// ---------------------------------------------------------------------------
+// Download Source Issues
+// ---------------------------------------------------------------------------
+pub async fn download_source_issues() -> Result<(), Box<dyn Error>> {
+    let groups = gitlab::fetch_all_source_groups().await?;
+    let projects: Vec<_> = gitlab::fetch_all_source_projects(groups).await?;
+
+    let futures: Vec<_> = projects.into_iter().map(fetch_all_source_issues).collect();
+    let issues: HashMap<_, _> = http::politely_try_join_all(futures, 24, 500)
+        .await?
+        .into_iter()
+        .collect();
+    save_source_issues(&issues)?;
+    Ok(())
+}
+
+fn save_source_issues(issues: &CachedIssues) -> Result<(), Box<dyn Error>> {
+    let dir_path = "cache";
+    std::fs::create_dir_all(dir_path)?;
+    let json_path = format!("{}/issues.json", dir_path);
+    serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &issues)?;
+    println!("Successfully wrote to {}!", json_path);
+    Ok(())
+}
+
+pub async fn fetch_all_source_issues(
+    project: SourceProject,
+) -> Result<(String, Vec<SourceIssue>), Box<dyn Error>> {
+    let key = project.key();
+    let issues = gitlab::fetch_all_source_issues(&project).await?;
+    Ok((key, issues))
 }
 
 // ---------------------------------------------------------------------------

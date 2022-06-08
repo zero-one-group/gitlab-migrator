@@ -58,6 +58,24 @@ impl SourceMember {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SourceAssignee {
+    pub id: i64,
+    pub name: String,
+    pub username: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SourceIssue {
+    pub iid: u32,
+    pub title: String,
+    pub author: SourceAssignee,
+    pub assignee: Option<SourceAssignee>,
+    pub project_id: u32,
+    pub labels: Vec<String>,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SourceVariable {
     pub variable_type: String,
     pub key: String,
@@ -104,6 +122,7 @@ pub struct ExportStatus {
 pub type CachedProjectMetadata = HashMap<u32, SourceProject>;
 pub type CachedCiVariables = HashMap<String, Vec<SourceVariable>>;
 pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceMember>>>;
+pub type CachedIssues = HashMap<String, Vec<SourceIssue>>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TargetUser {

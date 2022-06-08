@@ -1,6 +1,6 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceMember, SourceProject, SourceUser, SourceVariable,
-    TargetGroup, TargetProject, TargetUser,
+    ExportStatus, Membership, SourceGroup, SourceIssue, SourceMember, SourceProject, SourceUser,
+    SourceVariable, TargetGroup, TargetProject, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -265,6 +265,38 @@ pub async fn fetch_source_ci_variables(
     } else {
         Ok(vec![])
     }
+}
+
+pub async fn fetch_all_source_issues(
+    project: &SourceProject,
+) -> Result<Vec<SourceIssue>, Box<dyn Error>> {
+    println!("Fetching all issues for {:?}...", project);
+    let mut all_groups = vec![];
+    let mut latest_page = 1;
+    let mut latest_len = 0;
+    while latest_len == 100 || latest_page == 1 {
+        let mut groups = fetch_source_issues(project, latest_page).await?;
+        latest_len = groups.len();
+        latest_page += 1;
+        all_groups.append(&mut groups);
+    }
+    Ok(all_groups)
+}
+
+async fn fetch_source_issues(
+    project: &SourceProject,
+    page: u32,
+) -> Result<Vec<SourceIssue>, Box<dyn Error>> {
+    let url = format!("{}/projects/{}/issues", *SOURCE_GITLAB_URL, project.id);
+    let response = http::CLIENT
+        .get(url)
+        .query(&[("per_page", "100"), ("page", &page.to_string())])
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
+        .send()
+        .await?;
+    let payload = &response.text().await?;
+    let groups: Vec<SourceIssue> = serde_json::from_str(payload)?;
+    Ok(groups)
 }
 
 pub async fn download_source_project_gz(status: &ExportStatus) -> Result<Response, Box<dyn Error>> {

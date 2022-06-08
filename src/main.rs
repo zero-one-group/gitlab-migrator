@@ -9,6 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("download-source-memberships") => Ok(apps::download_source_memberships().await?),
         Some("download-source-projects") => Ok(apps::download_source_projects().await?),
         Some("download-source-ci-variables") => Ok(apps::download_source_ci_variables().await?),
+        Some("download-source-issues") => Ok(apps::download_source_issues().await?),
         Some("download-source-project-metadata") => {
             Ok(apps::download_source_project_metadata().await?)
         }
