@@ -1,6 +1,6 @@
 use crate::types::{
     CachedCiVariables, CachedIssues, CachedMemberships, CachedProjectMetadata, ExportStatus,
-    Membership, SourceIssue, SourceMember, SourceProject, SourceVariable,
+    Membership, SourceIssue, SourceMember, SourceProject, SourceUser, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
@@ -174,9 +174,6 @@ pub async fn delete_target_users() -> Result<(), Box<dyn Error>> {
 // Create Target Users
 // ---------------------------------------------------------------------------
 pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
-    let memberships = std::fs::read_to_string("cache/memberships.json")?;
-    let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
-
     let email_mapping = std::fs::read_to_string("cache/username_email_mapping.json")?;
     let email_mapping: HashMap<String, String> = serde_json::from_str(&email_mapping)?;
 
@@ -186,17 +183,48 @@ pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
         .map(|user| user.username)
         .collect();
 
-    let futures: Vec<_> = memberships
-        .values()
-        .flat_map(|member| member.values())
-        .flatten()
-        .unique_by(|member| member.id)
-        .filter(|member| !existing_usernames.contains(&member.username))
-        .map(|member| gitlab::create_target_user(member.to_user(), &email_mapping))
+    let users_to_create = load_users_to_create()?;
+    let futures: Vec<_> = users_to_create
+        .into_iter()
+        .filter(|user| !existing_usernames.contains(&user.username))
+        .map(|user| gitlab::create_target_user(user, &email_mapping))
         .collect();
     println!("Creating target users for {} users...", futures.len());
     http::politely_try_join_all(futures, 8, 500).await?;
     Ok(())
+}
+
+pub fn load_users_to_create() -> Result<Vec<SourceUser>, Box<dyn Error>> {
+    let memberships = std::fs::read_to_string("cache/memberships.json")?;
+    let memberships: CachedMemberships = serde_json::from_str(&memberships)?;
+    let users_from_memberships = memberships
+        .values()
+        .flat_map(|member| member.values())
+        .flatten()
+        .map(|user| user.to_user());
+
+    let issues = std::fs::read_to_string("cache/issues.json")?;
+    let issues: CachedIssues = serde_json::from_str(&issues)?;
+    let users_from_issues = issues.values().flat_map(|project_issues| {
+        let users: Vec<_> = project_issues
+            .iter()
+            .flat_map(|issue| {
+                let author = issue.author.clone();
+                let assignee = issue.assignee.clone();
+                match assignee {
+                    Some(assignee) => vec![assignee, author],
+                    None => vec![author],
+                }
+            })
+            .collect();
+        users
+    });
+
+    let users_to_create = users_from_memberships
+        .chain(users_from_issues)
+        .unique_by(|user| user.id)
+        .collect();
+    Ok(users_to_create)
 }
 
 // ---------------------------------------------------------------------------
