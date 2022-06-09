@@ -38,9 +38,17 @@ Next, manually export the parent group, and import it to the the target GitLab i
 
 ### Programmatic Migration
 
-- Environment variable setup
-- Commands to execute
-- Rate limit considerations
+Set up the environment variables by `cp .env.example .env` and replace the environment variables to the appropriate domains and tokens. The source GitLab token must belong to the owner of the parent group, and the target GitLab token must belong to the administrator of the instance.
+
+We then execute the following steps:
+1. Download memberships, project archives, issues and CI variables, and save it to the `cache/` local directory by running `cargo run download-source-memberships`, `cargo run dowload-source-projects`, `cargo run download-source-ci-variables`, `cargo run download-source-issues` and `cargo run download-source-project-metadata` respectively.
+2. Add target users based on associated issues and group/project memberships using `cargo run create-target-users`. Rollback (if needed) using `cargo run delete-target-users`.
+3. Import target projects by running `cargo import-target-projects`. Allow for a few hours for the projects to be completely imported - especially larger projects. A fast internet connection here helps to avoid timeouts from the server. The client's default timeout is set to 900 seconds. Rollback (if needed) using `cargo run delete-target-projects`.
+4. Add group and project memberships using `cargo run add-target-users-to-groups` and `cargo run add-target-users-to-projects` respectively.
+5. Reassign issues to its original assignees using `cargo run reassign-target-issues`. With around 40k issues, this should take about an hour.
+6. Create the project CI variables using `cargo run create-target-ci-variables`.
+
+Each app takes into account the **default** rate limits, so it should work right out of the box. With a slow internet connection, it may be necessary [to increase the server's worker timeout](https://docs.gitlab.com/ee/administration/operations/puma.html).
 
 ## Other Solutions We Considered
 
