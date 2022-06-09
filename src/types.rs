@@ -152,3 +152,9 @@ pub struct TargetGroup {
     pub name: String,
     pub full_path: String,
 }
+
+impl TargetGroup {
+    pub fn key(&self) -> String {
+        self.full_path.to_string()
+    }
+}
