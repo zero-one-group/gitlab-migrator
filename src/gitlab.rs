@@ -63,7 +63,32 @@ pub async fn reassign_target_issue(
     Ok(())
 }
 
-pub async fn add_target_project_member(
+pub async fn add_target_project_member_to_project(
+    project: TargetProject,
+    user: TargetUser,
+    member: SourceMember,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "Adding user {:?} to project {:?} from access level {:?}...",
+        user, project, member.access_level
+    );
+    let url = format!("{}/projects/{}/members", *TARGET_GITLAB_URL, project.id);
+    let response = http::CLIENT
+        .post(url)
+        .form(&[
+            ("user_id", &user.id.to_string()),
+            ("access_level", &member.access_level.to_string()),
+        ])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    if let Err(err) = response.error_for_status() {
+        println!("{}", err);
+    }
+    Ok(())
+}
+
+pub async fn add_target_project_member_to_group(
     group: TargetGroup,
     user: TargetUser,
     member: SourceMember,

@@ -83,13 +83,57 @@ pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
 }
 
 // ---------------------------------------------------------------------------
+// Add Target Users to Projects
+// ---------------------------------------------------------------------------
+pub async fn add_target_users_to_projects() -> Result<(), Box<dyn Error>> {
+    let projects = gitlab::fetch_all_target_projects().await?;
+    let project_ids: HashMap<_, _> = projects
+        .into_iter()
+        .map(|project| (project.key(), project))
+        .collect();
+
+    let users = gitlab::fetch_all_target_users().await?;
+    let user_ids: HashMap<_, _> = users
+        .into_iter()
+        .map(|user| (user.username.clone(), user))
+        .collect();
+
+    let memberships = std::fs::read_to_string("cache/memberships.json")?;
+    let mut memberships: CachedMemberships = serde_json::from_str(&memberships)?;
+    let project_memberships = memberships.remove("projects").unwrap_or_default();
+
+    let futures: Vec<_> = project_memberships
+        .into_iter()
+        .flat_map(|(project_key, members)| {
+            members
+                .into_iter()
+                .map(move |member| (project_key.clone(), member))
+        })
+        .filter_map(|(project_key, member)| {
+            let project_option = project_ids.get(&project_key);
+            let user_option = user_ids.get(&member.username);
+            match (project_option, user_option) {
+                (Some(project), Some(user)) => Some(gitlab::add_target_project_member_to_project(
+                    project.clone(),
+                    user.clone(),
+                    member,
+                )),
+                _ => None,
+            }
+        })
+        .collect();
+    http::politely_try_join_all(futures, 8, 500).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Add Target Users to Groups
 // ---------------------------------------------------------------------------
 pub async fn add_target_users_to_groups() -> Result<(), Box<dyn Error>> {
     let groups = gitlab::fetch_all_target_groups().await?;
     let group_ids: HashMap<_, _> = groups
         .into_iter()
-        .map(|group| (group.full_path.clone(), group))
+        .map(|group| (group.key(), group))
         .collect();
 
     let users = gitlab::fetch_all_target_users().await?;
@@ -113,7 +157,7 @@ pub async fn add_target_users_to_groups() -> Result<(), Box<dyn Error>> {
             let group_option = group_ids.get(&group_path);
             let user_option = user_ids.get(&member.username);
             match (group_option, user_option) {
-                (Some(group), Some(user)) => Some(gitlab::add_target_project_member(
+                (Some(group), Some(user)) => Some(gitlab::add_target_project_member_to_group(
                     group.clone(),
                     user.clone(),
                     member,
