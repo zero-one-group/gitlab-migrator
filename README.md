@@ -52,5 +52,4 @@ Each app takes into account the **default** rate limits, so it should work right
 
 ## Other Solutions We Considered
 
-- gitlabhost.com
-- Manual migration
+Shout out to [GitLabHost](https://gitlabhost.com/)! If we hadn't had an in-house infrastructure team, we would've gone for GitLabHost's services!
