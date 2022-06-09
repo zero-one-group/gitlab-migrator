@@ -8,6 +8,35 @@ use std::collections::HashMap;
 use std::error::Error;
 
 // ---------------------------------------------------------------------------
+// Create Target CI Variables
+// ---------------------------------------------------------------------------
+pub async fn create_target_ci_variables() -> Result<(), Box<dyn Error>> {
+    let variables = std::fs::read_to_string("cache/ci_variables.json")?;
+    let variables: CachedCiVariables = serde_json::from_str(&variables)?;
+
+    let projects: HashMap<_, _> = gitlab::fetch_all_target_projects()
+        .await?
+        .into_iter()
+        .map(|project| (project.key(), project))
+        .collect();
+
+    let futures: Vec<_> = variables
+        .into_iter()
+        .flat_map(|(key, vars)| {
+            let pairs: Vec<_> = vars.into_iter().map(|v| (key.to_owned(), v)).collect();
+            pairs
+        })
+        .filter_map(|(key, var)| {
+            let project_option = projects.get(&key);
+            project_option.map(|project| gitlab::create_target_ci_variable(var, project))
+        })
+        .collect();
+    http::politely_try_join_all(futures, 8, 500).await?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Reassign Target Issues
 // ---------------------------------------------------------------------------
 pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {

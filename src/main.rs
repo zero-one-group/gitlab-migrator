@@ -19,6 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("delete-target-projects") => Ok(apps::delete_target_projects().await?),
         Some("add-target-users-to-groups") => Ok(apps::add_target_users_to_groups().await?),
         Some("reassign-target-issues") => Ok(apps::reassign_target_issues().await?),
+        Some("create-target-ci-variables") => Ok(apps::create_target_ci_variables().await?),
         Some(_) => Err("Unrecognised application name!".into()),
         None => Err("Must specify an application name!".into()),
     }

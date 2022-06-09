@@ -14,6 +14,30 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
+pub async fn create_target_ci_variable(
+    variable: SourceVariable,
+    project: &TargetProject,
+) -> Result<(), Box<dyn Error>> {
+    println!("Creating variable {} in {}...", variable.key, project.key());
+    let url = format!("{}/projects/{}/variables", *TARGET_GITLAB_URL, project.id);
+    let response = http::CLIENT
+        .post(url)
+        .form(&[
+            ("key", variable.key),
+            ("value", variable.value),
+            ("variable_type", variable.variable_type),
+            ("protected", variable.protected.to_string()),
+            ("masked", variable.masked.to_string()),
+        ])
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?;
+    if let Err(err) = response.error_for_status() {
+        println!("{}", err);
+    }
+    Ok(())
+}
+
 pub async fn reassign_target_issue(
     issue: SourceIssue,
     project: &TargetProject,
