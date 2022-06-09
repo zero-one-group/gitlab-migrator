@@ -23,11 +23,18 @@ It is possible to [migrate projects](https://docs.gitlab.com/ee/user/project/set
 
 ## How We Use This App
 
-- Recap on what's important for us
+Our goal is to recover the following in a new self-managed GitLab instance:
+* sub-group and project structure;
+* users and their avatars;
+* specific memberships to sub-groups and projects;
+* issue assignees; and
+* CI variables.
 
 ### Manual Setup
 
-- Install GitLab on AWS
+- Install GitLab on AWS (TODO: @rubiagatra)
+
+Next, manually export the parent group, and import it to the the target GitLab instance.
 
 ### Programmatic Migration
 
