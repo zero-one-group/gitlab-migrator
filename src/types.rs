@@ -58,18 +58,11 @@ impl SourceMember {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct SourceAssignee {
-    pub id: i64,
-    pub name: String,
-    pub username: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SourceIssue {
     pub iid: u32,
     pub title: String,
-    pub author: SourceAssignee,
-    pub assignee: Option<SourceAssignee>,
+    pub author: SourceUser,
+    pub assignee: Option<SourceUser>,
     pub project_id: u32,
     pub labels: Vec<String>,
     pub created_at: String,
