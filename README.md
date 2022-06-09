@@ -50,6 +50,12 @@ We then execute the following steps:
 
 Each app takes into account the **default** rate limits, so it should work right out of the box. With a slow internet connection, it may be necessary [to increase the server's worker timeout](https://docs.gitlab.com/ee/administration/operations/puma.html).
 
+### Finishing Up
+
+What's leftover is:
+1. Re-register existing CI runners to the new instance.
+2. Rewire existing GitLab integrations by changing the URL and PATs.
+
 ## Other Solutions We Considered
 
 Shout out to [GitLabHost](https://gitlabhost.com/)! If we hadn't had an in-house infrastructure team, we would've gone for GitLabHost's services!
