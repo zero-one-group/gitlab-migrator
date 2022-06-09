@@ -201,7 +201,9 @@ pub fn synchronous_import_target_project(project: SourceProject) -> Result<(), B
         .text("path", project.path)
         .file("file", gz_path)?;
 
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(900))
+        .build()?;
     let url = format!("{}/projects/import", *TARGET_GITLAB_URL);
     client
         .post(url)
