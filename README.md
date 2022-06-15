@@ -17,6 +17,7 @@ For ZOG, to migrate out of GitLab means that we need to reinvent a large part of
 All of ZOG's GitLab activities live under a single parent group. Under that parent group, there are around 15 sub-groups and close to 150 projects. Whilst there are only 60 ZOG members, there are close to 150 users associated to the parent group, which accounts for ex-members, strategic partners and collaborators from our clients.
 
 It is possible to [migrate projects](https://docs.gitlab.com/ee/user/project/settings/import_export.html) and [migrate groups](https://docs.gitlab.com/ee/user/group/import/), so that it is possible to import these into a new self-managed GitLab instance manually. However, apart from being time consuming and hard to replicate, migrating manually poses a couple infeasibilities:
+
 1. Without public emails (and most users don't have public emails), memberships and assignees are not automatically added. It would be too time consuming and error prone for us to manually add ~300 group/project memberships and ~40k issues.
 2. Exported projects lose their CI variables. These secrets can only be re-added manually by project maintainers.
 3. Users have to be added manually, and we'll lose everyone's avatars. That just won't fly.
@@ -24,15 +25,20 @@ It is possible to [migrate projects](https://docs.gitlab.com/ee/user/project/set
 ## How We Use This App
 
 Our goal is to recover the following in a new self-managed GitLab instance:
-* sub-group and project structure;
-* users and their avatars;
-* specific memberships to sub-groups and projects;
-* issue assignees; and
-* CI variables.
+
+- sub-group and project structure;
+- users and their avatars;
+- specific memberships to sub-groups and projects;
+- issue assignees; and
+- CI variables.
 
 ### Manual Setup
 
-- Install GitLab on AWS (TODO: @rubiagatra)
+Install GitLab on AWS
+
+1. We recommend ec2 with at least 8GiB of RAM. We tried 4GiB, (t3.medium) but we failed to install. In our case we are
+   using t3.large (2vCPU and 8GiB RAM)
+2. Follow the installation manual https://about.gitlab.com/install/
 
 Next, manually export the parent group, and import it to the the target GitLab instance.
 
@@ -41,6 +47,7 @@ Next, manually export the parent group, and import it to the the target GitLab i
 Set up the environment variables by `cp .env.example .env` and replace the environment variables to the appropriate domains and tokens. The source GitLab token must belong to the owner of the parent group, and the target GitLab token must belong to the administrator of the instance.
 
 We then execute the following steps:
+
 1. Download memberships, project archives, issues and CI variables, and save it to the `cache/` local directory by running `cargo run download-source-memberships`, `cargo run dowload-source-projects`, `cargo run download-source-ci-variables`, `cargo run download-source-issues` and `cargo run download-source-project-metadata` respectively.
 2. Add target users based on associated issues and group/project memberships using `cargo run create-target-users`. Rollback (if needed) using `cargo run delete-target-users`.
 3. Import target projects by running `cargo import-target-projects`. Allow for a few hours for the projects to be completely imported - especially larger projects. A fast internet connection here helps to avoid timeouts from the server. The client's default timeout is set to 900 seconds. Rollback (if needed) using `cargo run delete-target-projects`. This app is idempotent, so that it's retry tolerant.
@@ -53,6 +60,7 @@ Each app takes into account the **default** rate limits, so it should work right
 ### Finishing Up
 
 What's leftover is:
+
 1. Re-register existing CI runners to the new instance.
 2. Rewire existing GitLab integrations by changing the URL and PATs.
 
