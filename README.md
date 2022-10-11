@@ -54,6 +54,7 @@ We then execute the following steps:
 4. Add group and project memberships using `cargo run add-target-users-to-groups` and `cargo run add-target-users-to-projects` respectively.
 5. Reassign issues to its original assignees using `cargo run reassign-target-issues`. With around 40k issues, this should take about an hour. This app is retry tolerant.
 6. Create the project CI variables using `cargo run create-target-ci-variables`.
+7. Optionally archive all projects once the new instance is usable using `cargo run archive-source-projects`.
 
 Each app takes into account the **default** rate limits, so it should work right out of the box. With a slow internet connection, it may be necessary [to increase the server's worker timeout](https://docs.gitlab.com/ee/administration/operations/puma.html).
 

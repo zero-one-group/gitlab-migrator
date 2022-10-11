@@ -1,4 +1,4 @@
 .env
-cache/
+cache*/
 
 /target
