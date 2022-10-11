@@ -489,3 +489,22 @@ pub async fn fetch_source_members(
     let members = gitlab::fetch_source_members(membership).await?;
     Ok((key, members))
 }
+
+// ---------------------------------------------------------------------------
+// Archive Source Projects
+// ---------------------------------------------------------------------------
+pub async fn archive_source_projects() -> Result<(), Box<dyn Error>> {
+    let groups = gitlab::fetch_all_source_groups().await?;
+    let projects: Vec<_> = gitlab::fetch_all_source_projects(groups)
+        .await?
+        .into_iter()
+        .filter(|project| !project.archived)
+        .collect();
+
+    for (index, project) in projects.iter().enumerate() {
+        gitlab::archive_source_project(project.id).await?;
+        println!("Completed ({}/{}) requests!", index + 1, projects.len());
+        http::throttle_for_ms(1000);
+    }
+    Ok(())
+}
