@@ -249,6 +249,10 @@ pub async fn delete_target_users() -> Result<(), Box<dyn Error>> {
 pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
     let email_mapping = std::fs::read_to_string("cache/username_email_mapping.json")?;
     let email_mapping: HashMap<String, String> = serde_json::from_str(&email_mapping)?;
+    println!(
+        "Using the following username-to-email mapping:\n{:#?}",
+        email_mapping
+    );
 
     let existing_users = gitlab::fetch_all_target_users().await?;
     let existing_usernames: Vec<_> = existing_users
@@ -393,6 +397,7 @@ pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn wait_and_save_project_gz(project_id: u32) -> Result<(), Box<dyn Error>> {
+    println!("Downloading project id {}...", project_id);
     let mut status = gitlab::fetch_export_status(project_id).await?;
     while status.export_status != "finished" {
         println!("Waiting for the following to complete: {:?}", status);

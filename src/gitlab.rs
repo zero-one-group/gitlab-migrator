@@ -296,7 +296,7 @@ pub fn synchronous_create_target_user(
         .text("username", user.username)
         .text("email", email)
         .text("force_random_password", "true")
-        //.text("reset_password", "true") // TODO: uncomment
+        .text("reset_password", "true")
         .text("skip_confirmation", "true")
         .file("avatar", avatar)?;
 
@@ -390,6 +390,7 @@ pub async fn download_source_project_gz(status: &ExportStatus) -> Result<Respons
 }
 
 pub async fn send_export_request(project_id: u32) -> Result<(), Box<dyn Error>> {
+    println!("Requesting export for project id {}...", project_id);
     let url = format!("{}/projects/{}/export", *SOURCE_GITLAB_URL, project_id);
     http::CLIENT
         .post(url)
