@@ -48,7 +48,7 @@ Set up the environment variables by `cp .env.example .env` and replace the envir
 
 We then execute the following steps:
 
-1. Download memberships, project archives, issues and CI variables, and save it to the `cache/` local directory by running `cargo run download-source-memberships`, `cargo run dowload-source-projects`, `cargo run download-source-ci-variables`, `cargo run download-source-issues` and `cargo run download-source-project-metadata` respectively.
+1. Download memberships, project archives, issues and CI variables, and save it to the `cache/` local directory by running `cargo run download-source-memberships`, `cargo run dowload-source-projects`, `cargo run download-source-ci-variables`, `cargo run download-source-issues` and `cargo run download-source-project-metadata` respectively. Tip: downloading source projects can take quite long if you have a lot of projects. The app is retry friendly, so run it a few times to be safe!
 2. Add target users based on associated issues and group/project memberships using `cargo run create-target-users`. Rollback (if needed) using `cargo run delete-target-users`.
 3. Import target projects by running `cargo import-target-projects`. Allow for a few hours for the projects to be completely imported - especially larger projects. A fast internet connection here helps to avoid timeouts from the server. The client's default timeout is set to 900 seconds. Rollback (if needed) using `cargo run delete-target-projects`. This app is idempotent, so that it's retry tolerant.
 4. Add group and project memberships using `cargo run add-target-users-to-groups` and `cargo run add-target-users-to-projects` respectively.

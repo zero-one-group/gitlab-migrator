@@ -399,6 +399,10 @@ pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
 pub async fn wait_and_save_project_gz(project_id: u32) -> Result<(), Box<dyn Error>> {
     println!("Downloading project id {}...", project_id);
     let mut status = gitlab::fetch_export_status(project_id).await?;
+    if status.export_status == "none" {
+        println!("Skipping: {:?}", status);
+        return Ok(());
+    }
     while status.export_status != "finished" {
         println!("Waiting for the following to complete: {:?}", status);
         http::throttle_for_ms(15 * 1000);
