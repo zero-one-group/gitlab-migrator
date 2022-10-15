@@ -38,13 +38,29 @@ pub async fn create_target_ci_variable(
     Ok(())
 }
 
+pub async fn fetch_all_target_issues(
+    project: &TargetProject,
+) -> Result<Vec<TargetIssue>, Box<dyn Error>> {
+    println!("Fetching all issues for {:?}...", project);
+    let mut all_groups = vec![];
+    let mut latest_page = 1;
+    let mut latest_len = 0;
+    while latest_len == 100 || latest_page == 1 {
+        let mut groups = fetch_target_issues(project, latest_page).await?;
+        latest_len = groups.len();
+        latest_page += 1;
+        all_groups.append(&mut groups);
+    }
+    Ok(all_groups)
+}
+
 pub async fn reassign_target_issue(
     issue: SourceIssue,
     project: &TargetProject,
     assignee: &TargetUser,
 ) -> Result<(), Box<dyn Error>> {
     println!(
-        "Reassigning issue {:?} in project {:?} to {:?}...",
+        "Reassigning issue\n{:?}\nin project\n{:?}\nto\n{:?}\n__________",
         issue, project, assignee
     );
     let url = format!(
@@ -58,7 +74,11 @@ pub async fn reassign_target_issue(
         .send()
         .await?;
     if let Err(err) = response.error_for_status() {
-        println!("{}", err);
+        println!("Error: {}", err);
+        println!(
+            "Context: \n{:?}\nin project\n{:?}\nto\n{:?}\n__________",
+            issue, project, assignee
+        )
     }
     Ok(())
 }
@@ -274,10 +294,14 @@ pub async fn create_target_user(
         Some(x) => x.to_string(),
         None => format!("{}@test.com", user.username),
     };
+    let email_str = email.to_string();
     let spawn_result =
         tokio::task::spawn_blocking(move || match synchronous_create_target_user(user, email) {
             Ok(x) => Ok(x),
-            Err(err) => Err(format!("Failed to create {:?}\n{}.", user_str, err)),
+            Err(err) => Err(format!(
+                "Failed to create {}\n{}\n{}.",
+                user_str, email_str, err
+            )),
         })
         .await;
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
