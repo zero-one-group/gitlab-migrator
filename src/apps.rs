@@ -1,6 +1,8 @@
+use crate::gitlab::fetch_source_pipeline_schedules;
 use crate::types::{
-    CachedCiVariables, CachedIssues, CachedMemberships, CachedProjectMetadata, ExportStatus,
-    Membership, SourceIssue, SourceMember, SourceProject, SourceUser, SourceVariable,
+    CachedCiVariables, CachedIssues, CachedMemberships, CachedPipelineSchedules,
+    CachedProjectMetadata, ExportStatus, Membership, SourceIssue, SourceMember, SourceProject,
+    SourceUser, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
@@ -333,6 +335,35 @@ pub async fn fetch_source_ci_variables(
     let key = project.key();
     let variables = gitlab::fetch_source_ci_variables(project).await?;
     Ok((key, variables))
+}
+
+// ---------------------------------------------------------------------------
+// Download Source Pipeline Schedules
+// ---------------------------------------------------------------------------
+pub async fn download_source_pipeline_schedules() -> Result<(), Box<dyn Error>> {
+    let groups = gitlab::fetch_all_source_groups().await?;
+    let projects: Vec<_> = gitlab::fetch_all_source_projects(groups).await?;
+    let futures: Vec<_> = projects
+        .iter()
+        .map(fetch_source_pipeline_schedules)
+        .collect();
+    let schedules: HashMap<_, _> = http::politely_try_join_all(futures, 24, 500)
+        .await?
+        .into_iter()
+        .collect();
+    save_source_pipeline_schedules(&schedules)?;
+    Ok(())
+}
+
+fn save_source_pipeline_schedules(
+    pipeline_schedules: &CachedPipelineSchedules,
+) -> Result<(), Box<dyn Error>> {
+    let dir_path = "cache";
+    std::fs::create_dir_all(dir_path)?;
+    let json_path = format!("{}/pipeline_schedules.json", dir_path);
+    serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &pipeline_schedules)?;
+    println!("Successfully wrote to {}!", json_path);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

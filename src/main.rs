@@ -13,6 +13,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("download-source-project-metadata") => {
             Ok(apps::download_source_project_metadata().await?)
         }
+        Some("download-source-pipeline-schedules") => {
+            Ok(apps::download_source_pipeline_schedules().await?)
+        }
         Some("create-target-users") => Ok(apps::create_target_users().await?),
         Some("delete-target-users") => Ok(apps::delete_target_users().await?),
         Some("import-target-projects") => Ok(apps::import_target_projects().await?),

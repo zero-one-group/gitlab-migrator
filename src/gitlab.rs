@@ -1,6 +1,7 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceIssue, SourceMember, SourceProject, SourceUser,
-    SourceVariable, TargetGroup, TargetProject, TargetUser,
+    ExportStatus, Membership, SourceGroup, SourceIssue, SourceMember, SourcePipelineSchedule,
+    SourcePipelineScheduleWithoutVariables, SourceProject, SourceUser, SourceVariable, TargetGroup,
+    TargetProject, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -36,22 +37,6 @@ pub async fn create_target_ci_variable(
         println!("{}", err);
     }
     Ok(())
-}
-
-pub async fn fetch_all_target_issues(
-    project: &TargetProject,
-) -> Result<Vec<TargetIssue>, Box<dyn Error>> {
-    println!("Fetching all issues for {:?}...", project);
-    let mut all_groups = vec![];
-    let mut latest_page = 1;
-    let mut latest_len = 0;
-    while latest_len == 100 || latest_page == 1 {
-        let mut groups = fetch_target_issues(project, latest_page).await?;
-        latest_len = groups.len();
-        latest_page += 1;
-        all_groups.append(&mut groups);
-    }
-    Ok(all_groups)
 }
 
 pub async fn reassign_target_issue(
@@ -365,6 +350,44 @@ pub async fn fetch_source_ci_variables(
     } else {
         Ok(vec![])
     }
+}
+
+pub async fn fetch_source_pipeline_schedules(
+    project: &SourceProject,
+) -> Result<(String, Vec<SourcePipelineSchedule>), Box<dyn Error>> {
+    let url = format!(
+        "{}/projects/{}/pipeline_schedules",
+        *SOURCE_GITLAB_URL, project.id
+    );
+    let payload = http::CLIENT
+        .get(url)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let pipeline_schedules: Vec<SourcePipelineScheduleWithoutVariables> =
+        serde_json::from_str(&payload)?;
+
+    let mut with_variables = vec![];
+    for schedule in pipeline_schedules {
+        let url = format!(
+            "{}/projects/{}/pipeline_schedules/{}",
+            *SOURCE_GITLAB_URL, project.id, schedule.id
+        );
+        let payload = http::CLIENT
+            .get(url)
+            .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        let pipeline_schedule: SourcePipelineSchedule = serde_json::from_str(&payload)?;
+        with_variables.push(pipeline_schedule)
+    }
+    Ok((project.id.to_string(), with_variables))
 }
 
 pub async fn fetch_all_source_issues(
