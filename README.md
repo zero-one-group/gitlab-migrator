@@ -36,8 +36,7 @@ Our goal is to recover the following in a new self-managed GitLab instance:
 
 Install GitLab on AWS
 
-1. We recommend ec2 with at least 8GiB of RAM. We tried 4GiB, (t3.medium) but we failed to install. In our case we are
-   using t3.large (2vCPU and 8GiB RAM)
+1. We recommend EC2 with at least 8GiB of RAM. We tried 4GiB, (t3.medium) but we had installation issues. In our case we are using c5.xlarge.
 2. Follow the installation manual https://about.gitlab.com/install/
 
 Next, manually export the parent group, and import it to the the target GitLab instance.
