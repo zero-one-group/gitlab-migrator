@@ -1,8 +1,7 @@
-use crate::gitlab::fetch_source_pipeline_schedules;
 use crate::types::{
     CachedCiVariables, CachedIssues, CachedMemberships, CachedPipelineSchedules,
-    CachedProjectMetadata, ExportStatus, Membership, SourceIssue, SourceMember, SourceProject,
-    SourceUser, SourceVariable,
+    CachedProjectMetadata, ExportStatus, Membership, SourceIssue, SourceMember,
+    SourcePipelineSchedule, SourceProject, SourceUser, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
@@ -78,6 +77,32 @@ pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
                 pairs
             }
             None => vec![],
+        })
+        .collect();
+    http::politely_try_join_all(futures, 24, 500).await?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Create Target Pipeline Schedules
+// ---------------------------------------------------------------------------
+pub async fn create_target_pipeline_schedules() -> Result<(), Box<dyn Error>> {
+    let projects: HashMap<_, _> = gitlab::fetch_all_target_projects()
+        .await?
+        .into_iter()
+        .map(|project| (project.key(), project))
+        .collect();
+
+    let all_schedules = std::fs::read_to_string("cache/pipeline_schedules.json")?;
+    let all_schedules: CachedPipelineSchedules = serde_json::from_str(&all_schedules)?;
+
+    let futures: Vec<_> = all_schedules
+        .into_iter()
+        .filter_map(|(key, schedules)| {
+            projects
+                .get(&key)
+                .map(|project| gitlab::create_target_pipeline_schedules(schedules, project))
         })
         .collect();
     http::politely_try_join_all(futures, 24, 500).await?;
@@ -364,6 +389,14 @@ fn save_source_pipeline_schedules(
     serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &pipeline_schedules)?;
     println!("Successfully wrote to {}!", json_path);
     Ok(())
+}
+
+pub async fn fetch_source_pipeline_schedules(
+    project: &SourceProject,
+) -> Result<(String, Vec<SourcePipelineSchedule>), Box<dyn Error>> {
+    let key = project.key();
+    let schedules = gitlab::fetch_source_pipeline_schedules(project).await?;
+    Ok((key, schedules))
 }
 
 // ---------------------------------------------------------------------------

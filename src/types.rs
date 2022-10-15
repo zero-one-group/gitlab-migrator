@@ -189,3 +189,9 @@ impl TargetGroup {
         self.full_path.to_string()
     }
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TargetPipelineSchedule {
+    pub id: u32,
+    pub description: String,
+}

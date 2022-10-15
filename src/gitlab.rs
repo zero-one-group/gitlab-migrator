@@ -1,7 +1,7 @@
 use crate::types::{
     ExportStatus, Membership, SourceGroup, SourceIssue, SourceMember, SourcePipelineSchedule,
     SourcePipelineScheduleWithoutVariables, SourceProject, SourceUser, SourceVariable, TargetGroup,
-    TargetProject, TargetUser,
+    TargetPipelineSchedule, TargetProject, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -36,6 +36,66 @@ pub async fn create_target_ci_variable(
     if let Err(err) = response.error_for_status() {
         println!("{}", err);
     }
+    Ok(())
+}
+
+pub async fn create_target_pipeline_schedules(
+    schedules: Vec<SourcePipelineSchedule>,
+    project: &TargetProject,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "Creating schedules {:#?} in {}...",
+        schedules,
+        project.key()
+    );
+    for schedule in schedules {
+        let url = format!(
+            "{}/projects/{}/pipeline_schedules",
+            *TARGET_GITLAB_URL, project.id
+        );
+        let payload = http::CLIENT
+            .post(url)
+            .form(&[
+                ("description", schedule.description),
+                ("ref", schedule.ref_),
+                ("cron", schedule.cron),
+                ("cron_timezone", schedule.cron_timezone),
+                ("active", schedule.active.to_string()),
+            ])
+            .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        let created: TargetPipelineSchedule = serde_json::from_str(&payload)?;
+        println!(
+            "Created pipeline schedule {:#?} in {}!",
+            created,
+            project.key()
+        );
+
+        for variable in schedule.variables.unwrap_or_default() {
+            let url = format!(
+                "{}/projects/{}/pipeline_schedules/{}/variables",
+                *TARGET_GITLAB_URL, project.id, schedule.id
+            );
+            http::CLIENT
+                .post(url)
+                .form(&[
+                    ("key", variable.key),
+                    ("value", variable.value),
+                    ("variable_type", variable.variable_type),
+                ])
+                .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+                .send()
+                .await?
+                .error_for_status()?
+                .text()
+                .await?;
+        }
+    }
+
     Ok(())
 }
 
@@ -354,7 +414,7 @@ pub async fn fetch_source_ci_variables(
 
 pub async fn fetch_source_pipeline_schedules(
     project: &SourceProject,
-) -> Result<(String, Vec<SourcePipelineSchedule>), Box<dyn Error>> {
+) -> Result<Vec<SourcePipelineSchedule>, Box<dyn Error>> {
     let url = format!(
         "{}/projects/{}/pipeline_schedules",
         *SOURCE_GITLAB_URL, project.id
@@ -387,7 +447,7 @@ pub async fn fetch_source_pipeline_schedules(
         let pipeline_schedule: SourcePipelineSchedule = serde_json::from_str(&payload)?;
         with_variables.push(pipeline_schedule)
     }
-    Ok((project.id.to_string(), with_variables))
+    Ok(with_variables)
 }
 
 pub async fn fetch_all_source_issues(
