@@ -650,13 +650,14 @@ async fn fetch_source_groups(page: u32) -> Result<Vec<SourceGroup>, Box<dyn Erro
     Ok(groups)
 }
 
-pub async fn archive_source_project(project_id: u32) -> Result<(), Box<dyn Error>> {
-    let url = format!("{}/projects/{}/archive", *SOURCE_GITLAB_URL, project_id);
+pub async fn archive_source_project(project: &SourceProject) -> Result<(), Box<dyn Error>> {
+    println!("Requesting to archive project {}...", project.key());
+    let url = format!("{}/projects/{}/archive", *SOURCE_GITLAB_URL, project.id);
     http::CLIENT
         .post(url)
         .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?;
-    println!("Requested archive for project ID {}!", project_id);
+    println!("Archived project {}!", project.key());
     Ok(())
 }

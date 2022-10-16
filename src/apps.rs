@@ -594,7 +594,7 @@ pub async fn archive_source_projects() -> Result<(), Box<dyn Error>> {
         .collect();
 
     for (index, project) in projects.iter().enumerate() {
-        gitlab::archive_source_project(project.id).await?;
+        gitlab::archive_source_project(project).await?;
         println!("Completed ({}/{}) requests!", index + 1, projects.len());
         http::throttle_for_ms(1000);
     }
