@@ -1,6 +1,7 @@
 use crate::types::{
-    CachedCiVariables, CachedIssues, CachedMemberships, CachedProjectMetadata, ExportStatus,
-    Membership, SourceIssue, SourceMember, SourceProject, SourceUser, SourceVariable,
+    CachedCiVariables, CachedIssues, CachedMemberships, CachedPipelineSchedules,
+    CachedProjectMetadata, ExportStatus, Membership, SourceIssue, SourceMember,
+    SourcePipelineSchedule, SourceProject, SourceUser, SourceVariable,
 };
 use crate::{gitlab, http};
 use itertools::Itertools;
@@ -43,6 +44,7 @@ pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
     let projects: HashMap<_, _> = gitlab::fetch_all_target_projects()
         .await?
         .into_iter()
+        .filter(|project| !project.archived)
         .map(|project| (project.key(), project))
         .collect();
 
@@ -75,6 +77,50 @@ pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
                 pairs
             }
             None => vec![],
+        })
+        .collect();
+    http::politely_try_join_all(futures, 24, 500).await?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Delete Target Pipeline Schedules
+// ---------------------------------------------------------------------------
+pub async fn delete_target_pipeline_schedules() -> Result<(), Box<dyn Error>> {
+    let projects: Vec<_> = gitlab::fetch_all_target_projects()
+        .await?
+        .into_iter()
+        .collect();
+
+    let futures: Vec<_> = projects
+        .iter()
+        .map(gitlab::delete_target_pipeline_schedules)
+        .collect();
+    http::politely_try_join_all(futures, 24, 500).await?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Create Target Pipeline Schedules
+// ---------------------------------------------------------------------------
+pub async fn create_target_pipeline_schedules() -> Result<(), Box<dyn Error>> {
+    let projects: HashMap<_, _> = gitlab::fetch_all_target_projects()
+        .await?
+        .into_iter()
+        .map(|project| (project.key(), project))
+        .collect();
+
+    let all_schedules = std::fs::read_to_string("cache/pipeline_schedules.json")?;
+    let all_schedules: CachedPipelineSchedules = serde_json::from_str(&all_schedules)?;
+
+    let futures: Vec<_> = all_schedules
+        .into_iter()
+        .filter_map(|(key, schedules)| {
+            projects
+                .get(&key)
+                .map(|project| gitlab::create_target_pipeline_schedules(schedules, project))
         })
         .collect();
     http::politely_try_join_all(futures, 24, 500).await?;
@@ -249,6 +295,10 @@ pub async fn delete_target_users() -> Result<(), Box<dyn Error>> {
 pub async fn create_target_users() -> Result<(), Box<dyn Error>> {
     let email_mapping = std::fs::read_to_string("cache/username_email_mapping.json")?;
     let email_mapping: HashMap<String, String> = serde_json::from_str(&email_mapping)?;
+    println!(
+        "Using the following username-to-email mapping:\n{:#?}",
+        email_mapping
+    );
 
     let existing_users = gitlab::fetch_all_target_users().await?;
     let existing_usernames: Vec<_> = existing_users
@@ -331,6 +381,43 @@ pub async fn fetch_source_ci_variables(
 }
 
 // ---------------------------------------------------------------------------
+// Download Source Pipeline Schedules
+// ---------------------------------------------------------------------------
+pub async fn download_source_pipeline_schedules() -> Result<(), Box<dyn Error>> {
+    let groups = gitlab::fetch_all_source_groups().await?;
+    let projects: Vec<_> = gitlab::fetch_all_source_projects(groups).await?;
+    let futures: Vec<_> = projects
+        .iter()
+        .map(fetch_source_pipeline_schedules)
+        .collect();
+    let schedules: HashMap<_, _> = http::politely_try_join_all(futures, 24, 500)
+        .await?
+        .into_iter()
+        .collect();
+    save_source_pipeline_schedules(&schedules)?;
+    Ok(())
+}
+
+fn save_source_pipeline_schedules(
+    pipeline_schedules: &CachedPipelineSchedules,
+) -> Result<(), Box<dyn Error>> {
+    let dir_path = "cache";
+    std::fs::create_dir_all(dir_path)?;
+    let json_path = format!("{}/pipeline_schedules.json", dir_path);
+    serde_json::to_writer_pretty(&std::fs::File::create(&json_path)?, &pipeline_schedules)?;
+    println!("Successfully wrote to {}!", json_path);
+    Ok(())
+}
+
+pub async fn fetch_source_pipeline_schedules(
+    project: &SourceProject,
+) -> Result<(String, Vec<SourcePipelineSchedule>), Box<dyn Error>> {
+    let key = project.key();
+    let schedules = gitlab::fetch_source_pipeline_schedules(project).await?;
+    Ok((key, schedules))
+}
+
+// ---------------------------------------------------------------------------
 // Download Source Issues
 // ---------------------------------------------------------------------------
 pub async fn download_source_issues() -> Result<(), Box<dyn Error>> {
@@ -393,7 +480,12 @@ pub async fn download_source_projects() -> Result<(), Box<dyn Error>> {
 }
 
 pub async fn wait_and_save_project_gz(project_id: u32) -> Result<(), Box<dyn Error>> {
+    println!("Downloading project id {}...", project_id);
     let mut status = gitlab::fetch_export_status(project_id).await?;
+    if status.export_status == "none" {
+        println!("Skipping: {:?}", status);
+        return Ok(());
+    }
     while status.export_status != "finished" {
         println!("Waiting for the following to complete: {:?}", status);
         http::throttle_for_ms(15 * 1000);
@@ -502,7 +594,7 @@ pub async fn archive_source_projects() -> Result<(), Box<dyn Error>> {
         .collect();
 
     for (index, project) in projects.iter().enumerate() {
-        gitlab::archive_source_project(project.id).await?;
+        gitlab::archive_source_project(project).await?;
         println!("Completed ({}/{}) requests!", index + 1, projects.len());
         http::throttle_for_ms(1000);
     }

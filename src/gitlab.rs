@@ -1,6 +1,7 @@
 use crate::types::{
-    ExportStatus, Membership, SourceGroup, SourceIssue, SourceMember, SourceProject, SourceUser,
-    SourceVariable, TargetGroup, TargetProject, TargetUser,
+    ExportStatus, Membership, SourceGroup, SourceIssue, SourceMember, SourcePipelineSchedule,
+    SourcePipelineScheduleWithoutVariables, SourceProject, SourceUser, SourceVariable, TargetGroup,
+    TargetPipelineSchedule, TargetProject, TargetUser,
 };
 use crate::{env, http};
 use reqwest::Response;
@@ -12,6 +13,42 @@ lazy_static::lazy_static! {
     pub static ref SOURCE_GITLAB_TOKEN: String = env::load_env("SOURCE_GITLAB_TOKEN");
     pub static ref TARGET_GITLAB_URL: String = env::load_env("TARGET_GITLAB_URL");
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
+}
+
+pub async fn delete_target_pipeline_schedules(
+    project: &TargetProject,
+) -> Result<(), Box<dyn Error>> {
+    let url = format!(
+        "{}/projects/{}/pipeline_schedules",
+        *TARGET_GITLAB_URL, project.id
+    );
+    let payload = http::CLIENT
+        .get(url)
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let schedules: Vec<TargetPipelineSchedule> = serde_json::from_str(&payload)?;
+
+    for schedule in schedules {
+        println!(
+            "Deleting pipeline schedule '{}' in {}...",
+            schedule.description,
+            project.key()
+        );
+        let url = format!(
+            "{}/projects/{}/pipeline_schedules/{}",
+            *TARGET_GITLAB_URL, project.id, schedule.id
+        );
+        http::CLIENT
+            .delete(url)
+            .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+            .send()
+            .await?;
+    }
+    Ok(())
 }
 
 pub async fn create_target_ci_variable(
@@ -38,13 +75,74 @@ pub async fn create_target_ci_variable(
     Ok(())
 }
 
+pub async fn create_target_pipeline_schedules(
+    schedules: Vec<SourcePipelineSchedule>,
+    project: &TargetProject,
+) -> Result<(), Box<dyn Error>> {
+    println!(
+        "Creating schedules {:#?} in {}...",
+        schedules,
+        project.key()
+    );
+    for schedule in schedules {
+        let url = format!(
+            "{}/projects/{}/pipeline_schedules",
+            *TARGET_GITLAB_URL, project.id
+        );
+        let result = http::CLIENT
+            .post(url)
+            .form(&[
+                ("description", schedule.description),
+                ("ref", schedule.ref_),
+                ("cron", schedule.cron),
+                ("cron_timezone", schedule.cron_timezone),
+                ("active", schedule.active.to_string()),
+            ])
+            .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+            .send()
+            .await?
+            .error_for_status();
+        match result {
+            Ok(response) => {
+                let payload = response.text().await?;
+                let created: TargetPipelineSchedule = serde_json::from_str(&payload)?;
+                println!(
+                    "Created pipeline schedule '{}' in {}!",
+                    created.description,
+                    project.key()
+                );
+
+                for variable in schedule.variables.unwrap_or_default() {
+                    let url = format!(
+                        "{}/projects/{}/pipeline_schedules/{}/variables",
+                        *TARGET_GITLAB_URL, project.id, created.id
+                    );
+                    http::CLIENT
+                        .post(url)
+                        .form(&[
+                            ("key", variable.key),
+                            ("value", variable.value),
+                            ("variable_type", variable.variable_type),
+                        ])
+                        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+                        .send()
+                        .await?;
+                }
+            }
+            Err(err) => println!("{:#?}", err),
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn reassign_target_issue(
     issue: SourceIssue,
     project: &TargetProject,
     assignee: &TargetUser,
 ) -> Result<(), Box<dyn Error>> {
     println!(
-        "Reassigning issue {:?} in project {:?} to {:?}...",
+        "Reassigning issue\n{:?}\nin project\n{:?}\nto\n{:?}\n__________",
         issue, project, assignee
     );
     let url = format!(
@@ -58,7 +156,11 @@ pub async fn reassign_target_issue(
         .send()
         .await?;
     if let Err(err) = response.error_for_status() {
-        println!("{}", err);
+        println!("Error: {}", err);
+        println!(
+            "Context: \n{:?}\nin project\n{:?}\nto\n{:?}\n__________",
+            issue, project, assignee
+        )
     }
     Ok(())
 }
@@ -274,10 +376,14 @@ pub async fn create_target_user(
         Some(x) => x.to_string(),
         None => format!("{}@test.com", user.username),
     };
+    let email_str = email.to_string();
     let spawn_result =
         tokio::task::spawn_blocking(move || match synchronous_create_target_user(user, email) {
             Ok(x) => Ok(x),
-            Err(err) => Err(format!("Failed to create {:?}\n{}.", user_str, err)),
+            Err(err) => Err(format!(
+                "Failed to create {}\n{}\n{}.",
+                user_str, email_str, err
+            )),
         })
         .await;
     spawn_result.map_err(|_| "Spawn blocking failed!".to_string())?
@@ -296,7 +402,7 @@ pub fn synchronous_create_target_user(
         .text("username", user.username)
         .text("email", email)
         .text("force_random_password", "true")
-        //.text("reset_password", "true") // TODO: uncomment
+        .text("reset_password", "true")
         .text("skip_confirmation", "true")
         .file("avatar", avatar)?;
 
@@ -341,6 +447,44 @@ pub async fn fetch_source_ci_variables(
     } else {
         Ok(vec![])
     }
+}
+
+pub async fn fetch_source_pipeline_schedules(
+    project: &SourceProject,
+) -> Result<Vec<SourcePipelineSchedule>, Box<dyn Error>> {
+    let url = format!(
+        "{}/projects/{}/pipeline_schedules",
+        *SOURCE_GITLAB_URL, project.id
+    );
+    let payload = http::CLIENT
+        .get(url)
+        .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let pipeline_schedules: Vec<SourcePipelineScheduleWithoutVariables> =
+        serde_json::from_str(&payload)?;
+
+    let mut with_variables = vec![];
+    for schedule in pipeline_schedules {
+        let url = format!(
+            "{}/projects/{}/pipeline_schedules/{}",
+            *SOURCE_GITLAB_URL, project.id, schedule.id
+        );
+        let payload = http::CLIENT
+            .get(url)
+            .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        let pipeline_schedule: SourcePipelineSchedule = serde_json::from_str(&payload)?;
+        with_variables.push(pipeline_schedule)
+    }
+    Ok(with_variables)
 }
 
 pub async fn fetch_all_source_issues(
@@ -390,6 +534,7 @@ pub async fn download_source_project_gz(status: &ExportStatus) -> Result<Respons
 }
 
 pub async fn send_export_request(project_id: u32) -> Result<(), Box<dyn Error>> {
+    println!("Requesting export for project id {}...", project_id);
     let url = format!("{}/projects/{}/export", *SOURCE_GITLAB_URL, project_id);
     http::CLIENT
         .post(url)
@@ -505,13 +650,14 @@ async fn fetch_source_groups(page: u32) -> Result<Vec<SourceGroup>, Box<dyn Erro
     Ok(groups)
 }
 
-pub async fn archive_source_project(project_id: u32) -> Result<(), Box<dyn Error>> {
-    let url = format!("{}/projects/{}/archive", *SOURCE_GITLAB_URL, project_id);
+pub async fn archive_source_project(project: &SourceProject) -> Result<(), Box<dyn Error>> {
+    println!("Requesting to archive project {}...", project.key());
+    let url = format!("{}/projects/{}/archive", *SOURCE_GITLAB_URL, project.id);
     http::CLIENT
         .post(url)
         .header("PRIVATE-TOKEN", &*SOURCE_GITLAB_TOKEN)
         .send()
         .await?;
-    println!("Requested archive for project ID {}!", project_id);
+    println!("Archived project {}!", project.key());
     Ok(())
 }

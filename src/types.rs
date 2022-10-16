@@ -77,6 +77,36 @@ pub struct SourceVariable {
     pub masked: bool,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SourcePipelineScheduleWithoutVariables {
+    pub id: u32,
+    pub description: String,
+    #[serde(rename(serialize = "ref", deserialize = "ref"))]
+    pub ref_: String,
+    pub cron: String,
+    pub cron_timezone: String,
+    pub active: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SourcePipelineSchedule {
+    pub id: u32,
+    pub description: String,
+    #[serde(rename(serialize = "ref", deserialize = "ref"))]
+    pub ref_: String,
+    pub cron: String,
+    pub cron_timezone: String,
+    pub active: bool,
+    pub variables: Option<Vec<SourcePipelineVariable>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SourcePipelineVariable {
+    pub variable_type: String,
+    pub key: String,
+    pub value: String,
+}
+
 pub enum Membership {
     Group(SourceGroup),
     Project(SourceProject),
@@ -116,6 +146,7 @@ pub type CachedProjectMetadata = HashMap<u32, SourceProject>;
 pub type CachedCiVariables = HashMap<String, Vec<SourceVariable>>;
 pub type CachedMemberships = HashMap<String, HashMap<String, Vec<SourceMember>>>;
 pub type CachedIssues = HashMap<String, Vec<SourceIssue>>;
+pub type CachedPipelineSchedules = HashMap<String, Vec<SourcePipelineSchedule>>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TargetUser {
@@ -157,4 +188,10 @@ impl TargetGroup {
     pub fn key(&self) -> String {
         self.full_path.to_string()
     }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TargetPipelineSchedule {
+    pub id: u32,
+    pub description: String,
 }
