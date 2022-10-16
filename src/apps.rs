@@ -44,6 +44,7 @@ pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
     let projects: HashMap<_, _> = gitlab::fetch_all_target_projects()
         .await?
         .into_iter()
+        .filter(|project| !project.archived)
         .map(|project| (project.key(), project))
         .collect();
 
@@ -62,7 +63,6 @@ pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
             Some(project) => {
                 let pairs: Vec<_> = issues
                     .into_iter()
-                    .take(20)
                     .filter_map(|issue| {
                         let assignee_username = issue
                             .assignee
