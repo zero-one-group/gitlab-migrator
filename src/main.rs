@@ -24,7 +24,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("add-target-users-to-projects") => Ok(apps::add_target_users_to_projects().await?),
         Some("reassign-target-issues") => Ok(apps::reassign_target_issues().await?),
         Some("create-target-ci-variables") => Ok(apps::create_target_ci_variables().await?),
-        Some("create-target-pipeline_schedules") => {
+        Some("delete-target-pipeline-schedules") => {
+            Ok(apps::delete_target_pipeline_schedules().await?)
+        }
+        Some("create-target-pipeline-schedules") => {
             Ok(apps::create_target_pipeline_schedules().await?)
         }
         Some("archive-source-projects") => Ok(apps::archive_source_projects().await?),

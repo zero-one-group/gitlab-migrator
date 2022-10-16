@@ -52,8 +52,9 @@ We then execute the following steps:
 3. Import target projects by running `cargo run import-target-projects`. Manually create your goups and subgroups. Allow for a few hours for the projects to be completely imported - especially larger projects. A fast internet connection here helps to avoid timeouts from the server. The client's default timeout is set to 900 seconds. Rollback (if needed) using `cargo run delete-target-projects`. This app is idempotent, so that it's retry tolerant.
 4. Add group and project memberships using `cargo run add-target-users-to-groups` and `cargo run add-target-users-to-projects` respectively.
 5. Reassign issues to its original assignees using `cargo run reassign-target-issues`. With around 40k issues, this should take about an hour. This app is retry tolerant.
-6. Create the project CI variables and pipeline schedules using `cargo run create-target-ci-variables` and `cargo run create-target-pipeline-schedules`.
-7. Optionally archive all projects once the new instance is usable using `cargo run archive-source-projects`.
+6. Create the project CI variables using `cargo run create-target-ci-variables`.
+7. Delete all target pipeline schedules using `cargo run delete-target-pipeline-schedules` and re-create them using `cargo run create-target-pipeline-schedules`.
+8. Optionally archive all projects once the new instance is usable using `cargo run archive-source-projects`.
 
 Each app takes into account the **default** rate limits, so it should work right out of the box. With a slow internet connection, it may be necessary [to increase the server's worker timeout](https://docs.gitlab.com/ee/administration/operations/puma.html).
 

@@ -15,6 +15,42 @@ lazy_static::lazy_static! {
     pub static ref TARGET_GITLAB_TOKEN: String = env::load_env("TARGET_GITLAB_TOKEN");
 }
 
+pub async fn delete_target_pipeline_schedules(
+    project: &TargetProject,
+) -> Result<(), Box<dyn Error>> {
+    let url = format!(
+        "{}/projects/{}/pipeline_schedules",
+        *TARGET_GITLAB_URL, project.id
+    );
+    let payload = http::CLIENT
+        .get(url)
+        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    let schedules: Vec<TargetPipelineSchedule> = serde_json::from_str(&payload)?;
+
+    for schedule in schedules {
+        println!(
+            "Deleting pipeline schedule '{}' in {}...",
+            schedule.description,
+            project.key()
+        );
+        let url = format!(
+            "{}/projects/{}/pipeline_schedules/{}",
+            *TARGET_GITLAB_URL, project.id, schedule.id
+        );
+        http::CLIENT
+            .delete(url)
+            .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+            .send()
+            .await?;
+    }
+    Ok(())
+}
+
 pub async fn create_target_ci_variable(
     variable: SourceVariable,
     project: &TargetProject,
@@ -53,7 +89,7 @@ pub async fn create_target_pipeline_schedules(
             "{}/projects/{}/pipeline_schedules",
             *TARGET_GITLAB_URL, project.id
         );
-        let payload = http::CLIENT
+        let result = http::CLIENT
             .post(url)
             .form(&[
                 ("description", schedule.description),
@@ -65,34 +101,35 @@ pub async fn create_target_pipeline_schedules(
             .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
             .send()
             .await?
-            .error_for_status()?
-            .text()
-            .await?;
-        let created: TargetPipelineSchedule = serde_json::from_str(&payload)?;
-        println!(
-            "Created pipeline schedule {:#?} in {}!",
-            created,
-            project.key()
-        );
+            .error_for_status();
+        match result {
+            Ok(response) => {
+                let payload = response.text().await?;
+                let created: TargetPipelineSchedule = serde_json::from_str(&payload)?;
+                println!(
+                    "Created pipeline schedule '{}' in {}!",
+                    created.description,
+                    project.key()
+                );
 
-        for variable in schedule.variables.unwrap_or_default() {
-            let url = format!(
-                "{}/projects/{}/pipeline_schedules/{}/variables",
-                *TARGET_GITLAB_URL, project.id, schedule.id
-            );
-            http::CLIENT
-                .post(url)
-                .form(&[
-                    ("key", variable.key),
-                    ("value", variable.value),
-                    ("variable_type", variable.variable_type),
-                ])
-                .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
-                .send()
-                .await?
-                .error_for_status()?
-                .text()
-                .await?;
+                for variable in schedule.variables.unwrap_or_default() {
+                    let url = format!(
+                        "{}/projects/{}/pipeline_schedules/{}/variables",
+                        *TARGET_GITLAB_URL, project.id, created.id
+                    );
+                    http::CLIENT
+                        .post(url)
+                        .form(&[
+                            ("key", variable.key),
+                            ("value", variable.value),
+                            ("variable_type", variable.variable_type),
+                        ])
+                        .header("PRIVATE-TOKEN", &*TARGET_GITLAB_TOKEN)
+                        .send()
+                        .await?;
+                }
+            }
+            Err(err) => println!("{:#?}", err),
         }
     }
 

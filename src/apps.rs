@@ -85,6 +85,24 @@ pub async fn reassign_target_issues() -> Result<(), Box<dyn Error>> {
 }
 
 // ---------------------------------------------------------------------------
+// Delete Target Pipeline Schedules
+// ---------------------------------------------------------------------------
+pub async fn delete_target_pipeline_schedules() -> Result<(), Box<dyn Error>> {
+    let projects: Vec<_> = gitlab::fetch_all_target_projects()
+        .await?
+        .into_iter()
+        .collect();
+
+    let futures: Vec<_> = projects
+        .iter()
+        .map(gitlab::delete_target_pipeline_schedules)
+        .collect();
+    http::politely_try_join_all(futures, 24, 500).await?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Create Target Pipeline Schedules
 // ---------------------------------------------------------------------------
 pub async fn create_target_pipeline_schedules() -> Result<(), Box<dyn Error>> {
