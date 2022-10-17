@@ -49,7 +49,9 @@ What's leftover is:
 
 ---
 
-### How ZOG Uses GitLab
+# Why We Wrote This
+
+## How ZOG Uses GitLab
 
 Every member of ZOG is part of one or more scrum teams, where GitLab's issues, milestones and boards are used as the main workload planning and tracking tool. This applies not only to the engineers and designers, but **everyone** in the company including digital account executives, legal officers, HR admins and sales executives. At the time of writing, ZOG consists of 60 members, of which more than half are not engineers, who use GitLab only for planning purposes (i.e. projects and sub-groups with zero source code). We therefore find ourselves in a rather odd position, where GitLab can be considered to be critical infrastructure for us, but at the same time we have a sizable group of non-power-users. The latter makes it difficult for us to justify paying a per-user subscription fee.
 
@@ -59,7 +61,7 @@ Every week, we create close to a thousand issues. Whilst GitLab's boards are exc
 
 For ZOG, to migrate out of GitLab means that we need to reinvent a large part of how we operate. For that reason, it makes sense for us to invest a little bit more effort into making GitLab work for us despite the changes to the free-tier GitLab SaaS.
 
-### Problems with Migrating Manually
+## Problems with Migrating Manually
 
 All of ZOG's GitLab activities live under a single parent group. Under that parent group, there are around 15 sub-groups and close to 150 projects. Whilst there are only 60 ZOG members, there are close to 150 users associated to the parent group, which accounts for ex-members, strategic partners and collaborators from our clients.
 
@@ -69,6 +71,6 @@ It is possible to [migrate projects](https://docs.gitlab.com/ee/user/project/set
 2. Exported projects lose their CI variables. These secrets can only be re-added manually by project maintainers.
 3. Users have to be added manually, and we'll lose everyone's avatars. That just won't fly.
 
-### Other Solutions We Considered
+## Other Solutions We Considered
 
 Shout out to [GitLabHost](https://gitlabhost.com/)! If we hadn't had an in-house infrastructure team, we would've gone for GitLabHost's services!
